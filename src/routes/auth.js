@@ -14,6 +14,10 @@ router.post('/login', async (req, res, next) => {
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+    if (user.inviteToken) {
+      return res.status(403).json({ error: 'Please set your password using the invite link first' });
+    }
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId } });
   } catch (e) { next(e); }

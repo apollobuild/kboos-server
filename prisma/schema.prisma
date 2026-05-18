@@ -8,14 +8,15 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  password    String
-  name        String
-  role        String   @default("operator")
-  bizId       String?
-  inviteToken String?  @unique
-  createdAt   DateTime @default(now())
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          String    @default("operator")
+  bizId         String?
+  inviteToken   String?   @unique
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
 }
 
 model Business {

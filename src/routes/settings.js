@@ -67,10 +67,51 @@ router.delete('/team/:id', requireAuth, async (req, res, next) => {
 router.get('/users', requireAdmin, async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, email: true, name: true, role: true, createdAt: true, inviteToken: true },
+      select: { id: true, email: true, name: true, role: true, createdAt: true, lastLoginAt: true, inviteToken: true },
       orderBy: { createdAt: 'asc' },
     });
     res.json(users.map(u => ({ ...u, pending: !!u.inviteToken, inviteToken: undefined })));
+  } catch (e) { next(e); }
+});
+
+router.patch('/users/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    const allowed = ['admin', 'operator', 'viewer'];
+    if (!allowed.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { role },
+      select: { id: true, email: true, name: true, role: true, createdAt: true, lastLoginAt: true, inviteToken: true },
+    });
+    res.json({ ...user, pending: !!user.inviteToken, inviteToken: undefined });
+  } catch (e) { next(e); }
+});
+
+router.post('/users/:id/resend-invite', requireAdmin, async (req, res, next) => {
+  try {
+    const { randomBytes } = await import('crypto');
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const inviteToken = randomBytes(32).toString('hex');
+    await prisma.user.update({ where: { id: req.params.id }, data: { inviteToken } });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://kboos-production.up.railway.app';
+    const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
+
+    try {
+      const sgKey = await getApiKey('sendgrid');
+      if (sgKey) {
+        await sendEmail({
+          to: user.email,
+          subject: 'Your KOBIS Outreach OS invite link',
+          body: `Hi ${user.name},\n\nHere is your new invite link to set your password:\n\n${inviteLink}\n\nKOBIS Team`,
+        });
+      }
+    } catch { /* email optional */ }
+
+    res.json({ inviteLink });
   } catch (e) { next(e); }
 });
 
