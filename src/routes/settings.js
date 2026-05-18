@@ -64,9 +64,30 @@ router.delete('/team/:id', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get('/users', requireAdmin, async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: { id: true, email: true, name: true, role: true, createdAt: true, inviteToken: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(users.map(u => ({ ...u, pending: !!u.inviteToken, inviteToken: undefined })));
+  } catch (e) { next(e); }
+});
+
+router.delete('/users/:id', requireAdmin, async (req, res, next) => {
+  try {
+    await prisma.user.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
     const { email, name, role, bizId } = req.body;
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(400).json({ error: `${email} already has an account` });
+
     const inviteToken = randomBytes(32).toString('hex');
     const placeholder = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
     const user = await prisma.user.create({
