@@ -105,6 +105,29 @@ async function main() {
   // Default settings
   await prisma.appSettings.upsert({ where: { id: 'global' }, create: { id: 'global' }, update: {} });
 
+  // Seed activity
+  const activityCount = await prisma.activity.count();
+  if (activityCount === 0) {
+    await prisma.activity.createMany({ data: [
+      { color:'green',  msg:'Campaign "Kuching Q2" launched — 2,400 leads queued', tag:'Campaigns' },
+      { color:'amber',  msg:'Tan Wei Liang (HSL Construction) scored 9/10 — hot lead', tag:'Leads' },
+      { color:'blue',   msg:'Sarah Lim (Maybank KCH) replied to email sequence', tag:'Leads' },
+      { color:'green',  msg:'Lina Abdullah (Sarawak Tourism) marked as meeting booked', tag:'Leads' },
+      { color:'amber',  msg:'Campaign "Developers KCH" submitted for approval', tag:'Campaigns' },
+      { color:'blue',   msg:'Ahmad Razali (Naim Holdings) opened email — score 8/10', tag:'Leads' },
+      { color:'green',  msg:'Campaign "KOBIS Video GLCs" resumed', tag:'Campaigns' },
+      { color:'red',    msg:'Ahmad Zul (SEDC) unsubscribed from sequence', tag:'Leads' },
+      { color:'blue',   msg:'Kevin Chong (Hock Seng Lee) replied via WhatsApp', tag:'Leads' },
+      { color:'green',  msg:'Campaign "Contractors" — 362 leads processed', tag:'Campaigns' },
+      { color:'amber',  msg:'David Wong (IJM Corporation) replied — follow up needed', tag:'Leads' },
+      { color:'blue',   msg:'SendGrid connected — email delivery active', tag:'System' },
+      { color:'green',  msg:'WATI WhatsApp connected — sequences live', tag:'System' },
+      { color:'amber',  msg:'Nurul Aina (SEB) opened email but no reply', tag:'Leads' },
+      { color:'green',  msg:'Dr. Zainab (UNIMAS) replied — high interest', tag:'Leads' },
+    ]});
+    console.log('Seeded 15 activity entries');
+  }
+
   console.log('Seed complete!');
 }
 
