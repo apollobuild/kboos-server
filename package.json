@@ -8,7 +8,8 @@
     "start": "npx prisma migrate deploy && node src/seed.js && node src/index.js",
     "migrate": "prisma migrate deploy && node src/seed.js",
     "db:push": "prisma db push",
-    "db:seed": "node src/seed.js",
+    "db:seed": "SEED_DB=true node src/seed.js",
+    "db:clear": "node src/clear-db.js",
     "generate": "prisma generate"
   },
   "dependencies": {

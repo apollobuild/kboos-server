@@ -3,6 +3,13 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+// Only seed when explicitly requested — never run automatically in production
+if (process.env.SEED_DB !== 'true') {
+  console.log('Skipping seed (set SEED_DB=true to seed).');
+  await prisma.$disconnect();
+  process.exit(0);
+}
+
 async function main() {
   console.log('Seeding database...');
 
