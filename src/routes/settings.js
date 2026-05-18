@@ -1,0 +1,89 @@
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import { requireAuth, requireAdmin } from '../middleware/auth.js';
+import { saveApiKey, getApiKey } from '../services/apiKeys.js';
+import { testConnection as testClaude } from '../services/claude.js';
+import { testConnection as testSendGrid, sendEmail } from '../services/sendgrid.js';
+import { testConnection as testWati } from '../services/wati.js';
+
+const router = Router();
+const prisma = new PrismaClient();
+
+router.get('/', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }) || {};
+    // Mask key values
+    const keys = {};
+    for (const api of ['claude', 'sendgrid', 'wati', 'wati_url', 'apollo', 'billplz_api_key', 'billplz_collection_id', 'billplz_x_signature_key']) {
+      const val = await getApiKey(api);
+      keys[api] = val ? '••••••••' + val.slice(-4) : '';
+    }
+    res.json({ ...s, apiKeys: keys });
+  } catch (e) { next(e); }
+});
+
+router.post('/api-key', requireAuth, async (req, res, next) => {
+  try {
+    const { api, value } = req.body;
+    await saveApiKey(api, value);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.get('/test-connection/:api', requireAuth, async (req, res, next) => {
+  try {
+    const api = req.params.api;
+    const key = await getApiKey(api);
+    if (!key) return res.json({ ok: false, error: 'No key saved' });
+    let ok = false;
+    if (api === 'claude') ok = await testClaude(key).catch(() => false);
+    else if (api === 'sendgrid') ok = await testSendGrid(key).catch(() => false);
+    else if (api === 'wati') { const url = await getApiKey('wati_url'); ok = await testWati(key, url).catch(() => false); }
+    else ok = !!key;
+    res.json({ ok });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+
+router.post('/team', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }) || { team: [] };
+    const team = [...(s.team || []), { id: Date.now(), ...req.body }];
+    await prisma.appSettings.upsert({ where: { id: 'global' }, create: { id: 'global', team }, update: { team } });
+    res.json({ ok: true, team });
+  } catch (e) { next(e); }
+});
+
+router.delete('/team/:id', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const team = (s?.team || []).filter(m => String(m.id) !== req.params.id);
+    await prisma.appSettings.update({ where: { id: 'global' }, data: { team } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.post('/user', requireAdmin, async (req, res, next) => {
+  try {
+    const { email, name, role, bizId } = req.body;
+    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
+    const hash = await bcrypt.hash(tempPassword, 10);
+    const user = await prisma.user.create({ data: { email, password: hash, name, role: role || 'operator', bizId } });
+
+    // Send invite email if SendGrid is configured
+    try {
+      const sgKey = await getApiKey('sendgrid');
+      if (sgKey) {
+        await sendEmail({
+          to: email,
+          subject: 'You have been invited to KOBIS Outreach OS',
+          body: `Hi ${name},\n\nYou've been added to the KOBIS Outreach OS team as ${role || 'operator'}.\n\nLogin here: https://kboos-production.up.railway.app\n\nEmail: ${email}\nTemporary Password: ${tempPassword}\n\nPlease change your password after first login.\n\nKOBIS Team`,
+        });
+      }
+    } catch { /* email optional */ }
+
+    res.json({ id: user.id, email: user.email, name: user.name, role: user.role, tempPassword });
+  } catch (e) { next(e); }
+});
+
+export default router;

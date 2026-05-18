@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("operator")
+  bizId     String?
+  createdAt DateTime @default(now())
+}
+
+model Business {
+  id        String     @id
+  name      String
+  industry  String
+  color     String     @default("blue")
+  campaigns Int        @default(0)
+  leads     Int        @default(0)
+  hot       Int        @default(0)
+  spend     String     @default("RM 0")
+  brief     String     @default("none")
+  status    String?
+  createdAt DateTime   @default(now())
+  Campaign  Campaign[]
+}
+
+model Campaign {
+  id        Int      @id @default(autoincrement())
+  bizId     String
+  biz       Business @relation(fields: [bizId], references: [id])
+  bizName   String
+  name      String
+  status    String   @default("active")
+  color     String   @default("blue")
+  leads     Int      @default(0)
+  total     Int      @default(600)
+  hot       Int      @default(0)
+  spend     String   @default("RM 0")
+  open      String   @default("0%")
+  wa        String   @default("-")
+  tier      String   @default("Starter")
+  sequence  Json?
+  driveSync Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Lead {
+  id         Int      @id @default(autoincrement())
+  campaignId Int?
+  bizId      String?
+  name       String
+  company    String
+  title      String   @default("")
+  score      Int      @default(0)
+  status     String   @default("personalizing")
+  lang       String   @default("EN")
+  channels   String[]
+  last       String   @default("now")
+  createdAt  DateTime @default(now())
+}
+
+model Reply {
+  id        Int      @id @default(autoincrement())
+  leadId    Int?
+  bizId     String?
+  name      String
+  company   String
+  channel   String
+  msg       String
+  status    String   @default("unread")
+  unsub     Boolean  @default(false)
+  hot       Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id        Int      @id @default(autoincrement())
+  color     String
+  msg       String
+  tag       String
+  createdAt DateTime @default(now())
+}
+
+model AppSettings {
+  id              String  @id @default("global")
+  apiKeysEnc      Json    @default("{}")
+  driveConnected  Boolean @default(false)
+  billingSchedule String  @default("weekly")
+  waTemplates     Json    @default("[]")
+  domains         Json    @default("[]")
+  team            Json    @default("[]")
+}
+
+model Wallet {
+  id        String   @id @default("global")
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id          Int      @id @default(autoincrement())
+  type        String
+  amountSen   Int
+  billplzId   String?  @unique
+  note        String   @default("")
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+}
