@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { saveApiKey, getApiKey } from '../services/apiKeys.js';
 import { testConnection as testClaude } from '../services/claude.js';
@@ -66,23 +67,27 @@ router.delete('/team/:id', requireAuth, async (req, res, next) => {
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
     const { email, name, role, bizId } = req.body;
-    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase();
-    const hash = await bcrypt.hash(tempPassword, 10);
-    const user = await prisma.user.create({ data: { email, password: hash, name, role: role || 'operator', bizId } });
+    const inviteToken = randomBytes(32).toString('hex');
+    const placeholder = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+    const user = await prisma.user.create({
+      data: { email, password: placeholder, name, role: role || 'operator', bizId, inviteToken },
+    });
 
-    // Send invite email if SendGrid is configured
+    const frontendUrl = process.env.FRONTEND_URL || 'https://kboos-production.up.railway.app';
+    const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
+
     try {
       const sgKey = await getApiKey('sendgrid');
       if (sgKey) {
         await sendEmail({
           to: email,
           subject: 'You have been invited to KOBIS Outreach OS',
-          body: `Hi ${name},\n\nYou've been added to the KOBIS Outreach OS team as ${role || 'operator'}.\n\nLogin here: https://kboos-production.up.railway.app\n\nEmail: ${email}\nTemporary Password: ${tempPassword}\n\nPlease change your password after first login.\n\nKOBIS Team`,
+          body: `Hi ${name},\n\nYou've been invited to join the KOBIS Outreach OS team as ${role || 'operator'}.\n\nClick the link below to set your password and activate your account:\n\n${inviteLink}\n\nThis link is unique to you — do not share it.\n\nKOBIS Team`,
         });
       }
     } catch { /* email optional */ }
 
-    res.json({ id: user.id, email: user.email, name: user.name, role: user.role, tempPassword });
+    res.json({ id: user.id, email: user.email, name: user.name, role: user.role, inviteLink });
   } catch (e) { next(e); }
 });
 
