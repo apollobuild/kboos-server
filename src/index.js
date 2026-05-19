@@ -13,6 +13,7 @@ import whatsappRoutes from './routes/whatsapp.js';
 import settingsRoutes from './routes/settings.js';
 import walletRoutes from './routes/wallet.js';
 import scraperRoutes from './routes/scraper.js';
+import voiceRoutes from './routes/voice.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -34,6 +35,7 @@ app.use('/whatsapp', whatsappRoutes);
 app.use('/settings', settingsRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/scraper', scraperRoutes);
+app.use('/voice', voiceRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

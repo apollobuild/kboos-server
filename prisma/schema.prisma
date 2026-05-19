@@ -49,6 +49,7 @@ model Campaign {
   open      String   @default("0%")
   wa        String   @default("-")
   tier      String   @default("Starter")
+  channels  String[] @default([])
   sequence  Json?
   config    Json?
   driveSync Boolean  @default(false)
