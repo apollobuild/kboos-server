@@ -50,6 +50,7 @@ model Campaign {
   wa        String   @default("-")
   tier      String   @default("Starter")
   sequence  Json?
+  config    Json?
   driveSync Boolean  @default(false)
   createdAt DateTime @default(now())
 }
