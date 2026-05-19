@@ -7,6 +7,7 @@ import { saveApiKey, getApiKey } from '../services/apiKeys.js';
 import { testConnection as testClaude } from '../services/claude.js';
 import { testConnection as testSendGrid, sendEmail } from '../services/sendgrid.js';
 import { testConnection as testWati } from '../services/wati.js';
+import { testConnection as testOutscraper } from '../services/outscraper.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -16,7 +17,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }) || {};
     // Mask key values
     const keys = {};
-    for (const api of ['claude', 'sendgrid', 'wati', 'wati_url', 'apollo', 'billplz_api_key', 'billplz_collection_id', 'billplz_x_signature_key']) {
+    for (const api of ['claude', 'sendgrid', 'wati', 'wati_url', 'apollo', 'outscraper', 'billplz_api_key', 'billplz_collection_id', 'billplz_x_signature_key']) {
       const val = await getApiKey(api);
       keys[api] = val ? '••••••••' + val.slice(-4) : '';
     }
@@ -41,6 +42,7 @@ router.get('/test-connection/:api', requireAuth, async (req, res, next) => {
     if (api === 'claude') ok = await testClaude(key).catch(() => false);
     else if (api === 'sendgrid') ok = await testSendGrid(key).catch(() => false);
     else if (api === 'wati') { const url = await getApiKey('wati_url'); ok = await testWati(key, url).catch(() => false); }
+    else if (api === 'outscraper') ok = await testOutscraper(key).catch(() => false);
     else ok = !!key;
     res.json({ ok });
   } catch (e) { res.json({ ok: false, error: e.message }); }

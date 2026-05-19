@@ -12,6 +12,7 @@ import emailRoutes from './routes/email.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import settingsRoutes from './routes/settings.js';
 import walletRoutes from './routes/wallet.js';
+import scraperRoutes from './routes/scraper.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -32,6 +33,7 @@ app.use('/email', emailRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/settings', settingsRoutes);
 app.use('/wallet', walletRoutes);
+app.use('/scraper', scraperRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
