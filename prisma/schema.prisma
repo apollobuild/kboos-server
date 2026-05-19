@@ -35,6 +35,7 @@ model Business {
   website          String     @default("")
   commissionType   String     @default("percent")
   commissionValue  String     @default("")
+  avgDealValue     Int        @default(0)
   briefContent     Json?
   status           String?
   createdAt        DateTime   @default(now())
@@ -77,8 +78,9 @@ model Lead {
   status     String   @default("personalizing")
   lang       String   @default("EN")
   channels   String[]
-  last       String   @default("now")
-  createdAt  DateTime @default(now())
+  last         String   @default("now")
+  clientStatus String   @default("")
+  createdAt    DateTime @default(now())
 }
 
 model Reply {
