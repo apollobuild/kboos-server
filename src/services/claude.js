@@ -13,7 +13,7 @@ function parseJSON(text) {
   return JSON.parse(cleaned);
 }
 
-export async function generateBrief({ name, industry, service, audience, usps, tone, lang }) {
+export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang }) {
   const client = await getClient();
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-6',
@@ -22,6 +22,7 @@ export async function generateBrief({ name, industry, service, audience, usps, t
     messages: [{
       role: 'user',
       content: `Generate outreach copy for ${name}, a ${industry} company in Malaysia.
+${website ? `Website: ${website}` : ''}
 Service: ${service}
 Target Audience: ${audience}
 Unique Selling Points: ${usps}

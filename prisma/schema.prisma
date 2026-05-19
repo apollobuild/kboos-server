@@ -28,12 +28,16 @@ model Business {
   leads     Int        @default(0)
   hot       Int        @default(0)
   spend     String     @default("RM 0")
-  brief        String     @default("none")
-  contact      String     @default("")
-  phone        String     @default("")
-  briefContent Json?
-  status       String?
-  createdAt    DateTime   @default(now())
+  brief            String     @default("none")
+  contact          String     @default("")
+  phone            String     @default("")
+  email            String     @default("")
+  website          String     @default("")
+  commissionType   String     @default("percent")
+  commissionValue  String     @default("")
+  briefContent     Json?
+  status           String?
+  createdAt        DateTime   @default(now())
   Campaign  Campaign[]
 }
 
