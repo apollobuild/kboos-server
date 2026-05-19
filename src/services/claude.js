@@ -3,8 +3,14 @@ import { getApiKey } from './apiKeys.js';
 
 async function getClient() {
   const key = await getApiKey('claude');
-  if (!key) throw Object.assign(new Error('Claude API key not configured. Go to Settings → API Keys to add it.'), { status: 400 });
+  if (!key) throw Object.assign(new Error('Claude API key not configured'), { status: 400 });
   return new Anthropic({ apiKey: key });
+}
+
+function parseJSON(text) {
+  // Strip markdown code fences if Claude wraps the response
+  const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+  return JSON.parse(cleaned);
 }
 
 export async function generateBrief({ name, industry, service, audience, usps, tone, lang }) {
@@ -31,7 +37,7 @@ Return JSON with exactly these keys:
 }`
     }]
   });
-  return JSON.parse(msg.content[0].text);
+  return parseJSON(msg.content[0].text);
 }
 
 export async function generateEmail({ bizName, campaignName, prompt, lead }) {
@@ -51,7 +57,7 @@ Return JSON: { "subject": "...", "body": "..." }
 Body under 130 words. Natural tone, not salesy.`
     }]
   });
-  return JSON.parse(msg.content[0].text);
+  return parseJSON(msg.content[0].text);
 }
 
 export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub }) {
