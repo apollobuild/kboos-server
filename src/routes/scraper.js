@@ -73,23 +73,28 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const body = {
-      api_key: apolloKey,
       q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
       person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
-      person_titles: jobTitles,
+      person_titles: jobTitles.length ? jobTitles : undefined,
       per_page: Math.min(limit, 100),
       page: 1,
     };
 
-    const apolloRes = await fetch('https://api.apollo.io/v1/mixed_people/search', {
+    const apolloRes = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'X-Api-Key': apolloKey,
+      },
       body: JSON.stringify(body),
     });
 
     if (!apolloRes.ok) {
-      const err = await apolloRes.text();
-      throw new Error(`Apollo error: ${err}`);
+      const errText = await apolloRes.text();
+      let errMsg = errText;
+      try { errMsg = JSON.parse(errText).error || errText; } catch {}
+      throw new Error(`Apollo: ${errMsg}`);
     }
 
     const data = await apolloRes.json();
