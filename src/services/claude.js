@@ -28,12 +28,12 @@ Unique Selling Points: ${usps}
 Tone: ${tone}
 Language: ${lang}
 
-Return JSON with exactly these keys:
+Return JSON with exactly these 4 keys. All values must be plain strings (no nested objects):
 {
-  "email": "complete cold email (subject + body, under 150 words)",
-  "whatsapp": "WhatsApp message under 80 words, conversational",
-  "voice": "30-second voice script, natural speech",
-  "scoring": "criteria for scoring leads: title keywords, company types, engagement signals"
+  "email": "Subject: [subject line]\\n\\n[full email body under 150 words]",
+  "whatsapp": "WhatsApp message under 80 words, conversational tone",
+  "voice": "30-second voice script written as natural speech",
+  "scoring": "bullet list of lead scoring criteria: title keywords, company types, engagement signals"
 }`
     }]
   });
