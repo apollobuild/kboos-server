@@ -2,8 +2,15 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Requires both env vars to prevent accidental wipe
+if (process.env.CLEAR_DB !== 'yes' || process.env.I_UNDERSTAND_THIS_DELETES_EVERYTHING !== 'yes') {
+  console.error('ERROR: clear-db requires CLEAR_DB=yes and I_UNDERSTAND_THIS_DELETES_EVERYTHING=yes');
+  console.error('Run: CLEAR_DB=yes I_UNDERSTAND_THIS_DELETES_EVERYTHING=yes node src/clear-db.js');
+  process.exit(1);
+}
+
 async function main() {
-  console.log('Clearing all seeded data...');
+  console.log('Clearing all data (admin user preserved)...');
 
   await prisma.activity.deleteMany({});
   await prisma.lead.deleteMany({});

@@ -5,8 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "npx prisma migrate deploy && node src/seed.js && node src/index.js",
-    "migrate": "prisma migrate deploy && node src/seed.js",
+    "start": "npx prisma migrate deploy && node src/index.js",
+    "migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "SEED_DB=true node src/seed.js",
     "db:clear": "node src/clear-db.js",
