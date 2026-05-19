@@ -71,7 +71,7 @@ router.delete('/team/:id', requireAuth, async (req, res, next) => {
 router.get('/users', requireAdmin, async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, email: true, name: true, role: true, createdAt: true, lastLoginAt: true, inviteToken: true },
+      select: { id: true, email: true, name: true, role: true, bizId: true, createdAt: true, lastLoginAt: true, inviteToken: true },
       orderBy: { createdAt: 'asc' },
     });
     res.json(users.map(u => ({ ...u, pending: !!u.inviteToken, inviteToken: undefined })));

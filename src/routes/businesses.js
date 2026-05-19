@@ -8,7 +8,14 @@ const prisma = new PrismaClient();
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const list = await prisma.business.findMany({ orderBy: { createdAt: 'asc' } });
-    res.json(list);
+    const clientCounts = await prisma.user.groupBy({
+      by: ['bizId'],
+      where: { role: 'client', bizId: { not: null } },
+      _count: true,
+    });
+    const countMap = {};
+    clientCounts.forEach(c => { if (c.bizId) countMap[c.bizId] = c._count; });
+    res.json(list.map(b => ({ ...b, clientCount: countMap[b.id] || 0 })));
   } catch (e) { next(e); }
 });
 
