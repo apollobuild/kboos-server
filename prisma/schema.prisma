@@ -125,6 +125,7 @@ model AppSettings {
   team             Json    @default("[]")
   promptTemplates  Json    @default("[]")
   driveServiceAccountKey Json?
+  monthlyBudget   Float   @default(1000)
 }
 
 model CampaignAction {

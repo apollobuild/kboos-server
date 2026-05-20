@@ -122,6 +122,65 @@ router.post('/webhook', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Cost rates in RM per action
+const RATES = { wa: 0.15, email: 0.05, call: 0.80 };
+
+router.get('/spend-summary', requireAuth, async (req, res, next) => {
+  try {
+    const now = new Date();
+    const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const start = new Date(`${month}-01T00:00:00.000Z`);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+
+    const [actions, enrichedCount, settings] = await Promise.all([
+      prisma.campaignAction.groupBy({
+        by: ['type'],
+        where: { sentAt: { gte: start, lt: end }, status: 'sent' },
+        _count: { id: true },
+      }),
+      prisma.lead.count({ where: { enriched: true, enrichedAt: { gte: start, lt: end } } }),
+      prisma.appSettings.findUnique({ where: { id: 'global' } }),
+    ]);
+
+    const breakdown = {};
+    let total = 0;
+
+    for (const a of actions) {
+      const rate = RATES[a.type] || 0;
+      const cost = parseFloat((a._count.id * rate).toFixed(2));
+      breakdown[a.type] = { count: a._count.id, cost };
+      total += cost;
+    }
+
+    // Apollo enrichment cost (RM 0.50/lead enriched this month via Professional plan usage estimate)
+    if (enrichedCount > 0) {
+      const enrichCost = parseFloat((enrichedCount * 0.50).toFixed(2));
+      breakdown.enrich = { count: enrichedCount, cost: enrichCost };
+      total += enrichCost;
+    }
+
+    res.json({
+      month,
+      total: parseFloat(total.toFixed(2)),
+      budget: settings?.monthlyBudget || 1000,
+      breakdown,
+    });
+  } catch (e) { next(e); }
+});
+
+router.patch('/budget', requireAuth, async (req, res, next) => {
+  try {
+    const { budget } = req.body;
+    if (!budget || budget < 0) return res.status(400).json({ error: 'Invalid budget' });
+    await prisma.appSettings.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', monthlyBudget: parseFloat(budget) },
+      update: { monthlyBudget: parseFloat(budget) },
+    });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 router.post('/webhook/redirect', async (req, res, next) => {
   try {
     const { billplz } = req.body;
