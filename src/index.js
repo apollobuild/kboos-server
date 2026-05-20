@@ -15,6 +15,7 @@ import walletRoutes from './routes/wallet.js';
 import scraperRoutes from './routes/scraper.js';
 import voiceRoutes from './routes/voice.js';
 import portalRoutes from './routes/portal.js';
+import demoRoutes from './routes/demo.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -38,6 +39,7 @@ app.use('/wallet', walletRoutes);
 app.use('/scraper', scraperRoutes);
 app.use('/voice', voiceRoutes);
 app.use('/portal', portalRoutes);
+app.use('/demo', demoRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
