@@ -60,7 +60,11 @@ model Campaign {
   channels  String[] @default([])
   sequence  Json?
   config    Json?
-  driveSync Boolean  @default(false)
+  driveSync    Boolean   @default(false)
+  startedAt    DateTime?
+  dailyLimit   Int       @default(200)
+  driveSheetId String?
+  driveSheetUrl String?
   createdAt DateTime @default(now())
 }
 
@@ -72,15 +76,21 @@ model Lead {
   company    String
   title      String   @default("")
   phone      String   @default("")
+  email      String   @default("")
   website    String   @default("")
   address    String   @default("")
   score      Int      @default(0)
   status     String   @default("personalizing")
   lang       String   @default("EN")
   channels   String[]
-  last         String   @default("now")
-  clientStatus String   @default("")
-  createdAt    DateTime @default(now())
+  last             String    @default("now")
+  clientStatus     String    @default("")
+  lastContactedAt  DateTime?
+  nextContactAt    DateTime?
+  enriched         Boolean   @default(false)
+  enrichedAt       DateTime?
+  enrichmentNote   String?
+  createdAt        DateTime  @default(now())
 }
 
 model Reply {
@@ -114,6 +124,23 @@ model AppSettings {
   domains          Json    @default("[]")
   team             Json    @default("[]")
   promptTemplates  Json    @default("[]")
+  driveServiceAccountKey Json?
+}
+
+model CampaignAction {
+  id         Int      @id @default(autoincrement())
+  leadId     Int
+  campaignId Int
+  type       String
+  stepDay    Int
+  status     String   @default("sent")
+  sentAt     DateTime
+  openedAt   DateTime?
+  errorMsg   String?
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId, stepDay, type])
+  @@index([leadId])
 }
 
 model Wallet {

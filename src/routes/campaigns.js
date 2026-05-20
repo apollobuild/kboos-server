@@ -35,4 +35,33 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
   try { await prisma.campaign.delete({ where: { id: parseInt(req.params.id) } }); res.json({ ok: true }); } catch (e) { next(e); }
 });
 
+// POST /campaigns/:id/start — launch campaign, engine takes over
+router.post('/:id/start', requireAuth, async (req, res, next) => {
+  try {
+    const { dailyLimit = 200 } = req.body;
+    const campaign = await prisma.campaign.update({
+      where: { id: parseInt(req.params.id) },
+      data: { status: 'active', startedAt: new Date(), dailyLimit: parseInt(dailyLimit) },
+    });
+    await prisma.activity.create({ data: {
+      color: 'green',
+      msg: `Campaign "${campaign.name}" launched — engine running at ${dailyLimit}/day`,
+      tag: 'Campaigns',
+    }}).catch(() => {});
+    res.json(campaign);
+  } catch (e) { next(e); }
+});
+
+// GET /campaigns/:id/actions — action log
+router.get('/:id/actions', requireAuth, async (req, res, next) => {
+  try {
+    const actions = await prisma.campaignAction.findMany({
+      where: { campaignId: parseInt(req.params.id) },
+      orderBy: { sentAt: 'desc' },
+      take: 200,
+    });
+    res.json(actions);
+  } catch (e) { next(e); }
+});
+
 export default router;

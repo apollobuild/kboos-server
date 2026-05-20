@@ -203,6 +203,29 @@ router.post('/prompt-templates/:id/test-send', requireAuth, async (req, res, nex
   } catch (e) { next(e); }
 });
 
+// Google Drive service account
+router.post('/drive-service-account', requireAuth, async (req, res, next) => {
+  try {
+    const { serviceAccountKey } = req.body;
+    if (!serviceAccountKey || typeof serviceAccountKey !== 'object') {
+      return res.status(400).json({ error: 'Invalid service account JSON' });
+    }
+    await prisma.appSettings.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', driveServiceAccountKey: serviceAccountKey },
+      update: { driveServiceAccountKey: serviceAccountKey },
+    });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.get('/drive-status', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    res.json({ connected: !!(s?.driveServiceAccountKey) });
+  } catch (e) { next(e); }
+});
+
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
     const { email, name, role, bizId } = req.body;

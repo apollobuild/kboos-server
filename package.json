@@ -20,6 +20,9 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
     "papaparse": "^5.4.1",
     "prisma": "^6.0.0"
   }

@@ -7,10 +7,17 @@ async function setup() {
   sgMail.setApiKey(key);
 }
 
-export async function sendEmail({ to, subject, body, fromEmail, fromName }) {
+export async function sendEmail({ to, subject, body, fromEmail, fromName, replyTo }) {
   await setup();
   const from = fromEmail || 'outreach@kboos.app';
-  await sgMail.send({ to, from: { email: from, name: fromName || 'KBOOS Outreach' }, subject, text: body, html: body.replace(/\n/g, '<br>') });
+  const msg = {
+    to, subject, text: body,
+    html: body.replace(/\n/g, '<br>'),
+    from: { email: from, name: fromName || 'KBOOS Outreach' },
+    trackingSettings: { openTracking: { enable: true } },
+  };
+  if (replyTo) msg.replyTo = replyTo;
+  await sgMail.send(msg);
   return { sent: true };
 }
 
