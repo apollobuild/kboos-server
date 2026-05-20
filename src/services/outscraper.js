@@ -1,4 +1,5 @@
 import { getApiKey } from './apiKeys.js';
+import { logScraper } from './costLogger.js';
 
 const BASE = 'https://api.app.outscraper.com';
 
@@ -34,9 +35,9 @@ export async function searchGoogleMaps({ query, limit = 50 }) {
     if (!pollRes.ok) continue;
     const result = await pollRes.json();
     if (result.status === 'Success' && result.data) {
-      // data is array of arrays (one per query)
-      const places = result.data.flat();
-      return places.filter(p => p && p.name);
+      const places = result.data.flat().filter(p => p && p.name);
+      logScraper({ records: places.length });
+      return places;
     }
     if (result.status === 'Error') throw new Error('Outscraper task failed');
     // status is Pending/Processing — continue polling

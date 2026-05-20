@@ -126,6 +126,19 @@ model AppSettings {
   promptTemplates  Json    @default("[]")
   driveServiceAccountKey Json?
   monthlyBudget   Float   @default(1000)
+  usdRmRate       Float   @default(4.70)
+}
+
+model ApiUsageLog {
+  id        Int      @id @default(autoincrement())
+  service   String
+  action    String
+  units     Float    @default(0)
+  costUsd   Float    @default(0)
+  meta      Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([service, createdAt])
 }
 
 model CampaignAction {

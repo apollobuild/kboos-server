@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getApiKey } from './apiKeys.js';
+import { logClaude } from './costLogger.js';
 
 async function getClient() {
   const key = await getApiKey('claude');
@@ -15,8 +16,9 @@ function parseJSON(text) {
 
 export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang }) {
   const client = await getClient();
+  const model = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model,
     max_tokens: 1024,
     system: 'You are an expert B2B outreach strategist for Malaysian SMEs. Return only valid JSON.',
     messages: [{
@@ -38,6 +40,7 @@ Return JSON with exactly these 4 keys. All values must be plain strings (no nest
 }`
     }]
   });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_brief' });
   return parseJSON(msg.content[0].text);
 }
 
@@ -46,8 +49,9 @@ export async function generateEmail({ bizName, campaignName, prompt, lead }) {
   const lang = lead.lang === 'MS' || lead.lang === 'BM' ? 'Bahasa Malaysia'
     : lead.lang === 'ZH' ? 'Mandarin Chinese'
     : 'English';
+  const emailModel = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: emailModel,
     max_tokens: 1024,
     system: `You are a cold email expert specialising in Malaysian B2B outreach. You write emails that get replies, not just opens.
 
@@ -76,14 +80,16 @@ Return JSON with exactly these keys:
 }`
     }]
   });
+  logClaude({ model: emailModel, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_email' });
   const parsed = parseJSON(msg.content[0].text);
   return { ...parsed, subject: Array.isArray(parsed.subjects) ? parsed.subjects[0] : parsed.subject || '' };
 }
 
 export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub }) {
   const client = await getClient();
+  const replyModel = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: replyModel,
     max_tokens: 256,
     system: 'You handle B2B outreach replies for a Malaysian company. Be concise and professional.',
     messages: [{
@@ -96,6 +102,7 @@ ${isHot ? 'They seem very interested — schedule a meeting.' : ''}
 Write a short, natural reply in the same language as their message. Return just the reply text, no JSON.`
     }]
   });
+  logClaude({ model: replyModel, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'suggest_reply' });
   return msg.content[0].text.trim();
 }
 

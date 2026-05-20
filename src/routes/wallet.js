@@ -122,8 +122,11 @@ router.post('/webhook', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Cost rates in RM per action
-const RATES = { wa: 0.15, email: 0.05, call: 0.80 };
+// Meta Malaysia business-initiated conversation rate (USD)
+const META_MY_RATE = 0.0450;
+// SendGrid estimated per-email cost on paid plan
+const SG_PER_EMAIL = 0.0004;
+// Outscraper per record already logged via costLogger
 
 router.get('/spend-summary', requireAuth, async (req, res, next) => {
   try {
@@ -132,50 +135,85 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
     const start = new Date(`${month}-01T00:00:00.000Z`);
     const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
 
-    const [actions, enrichedCount, settings] = await Promise.all([
-      prisma.campaignAction.groupBy({
-        by: ['type'],
-        where: { sentAt: { gte: start, lt: end }, status: 'sent' },
-        _count: { id: true },
-      }),
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const rate = settings?.usdRmRate || 4.70;
+
+    // Claude — exact from ApiUsageLog (real token costs)
+    const claudeLog = await prisma.apiUsageLog.aggregate({
+      where: { service: 'claude', createdAt: { gte: start, lt: end } },
+      _sum: { costUsd: true, units: true },
+      _count: { id: true },
+    });
+
+    // Outscraper — exact from ApiUsageLog (records × $0.001)
+    const scraperLog = await prisma.apiUsageLog.aggregate({
+      where: { service: 'outscraper', createdAt: { gte: start, lt: end } },
+      _sum: { costUsd: true, units: true },
+    });
+
+    // Email + WA counts from CampaignAction
+    const [emailCount, waCount, enrichedCount] = await Promise.all([
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', sentAt: { gte: start, lt: end } } }),
+      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', sentAt: { gte: start, lt: end } } }),
       prisma.lead.count({ where: { enriched: true, enrichedAt: { gte: start, lt: end } } }),
-      prisma.appSettings.findUnique({ where: { id: 'global' } }),
     ]);
 
-    const breakdown = {};
-    let total = 0;
+    // Vapi — fetch real call costs from their API
+    let vapiCostUsd = 0;
+    let vapiCount = 0;
+    let vapiSource = 'none';
+    try {
+      const { getApiKey } = await import('../services/apiKeys.js');
+      const vapiKey = await getApiKey('vapi');
+      if (vapiKey) {
+        const r = await fetch(`https://api.vapi.ai/call?startedAtGt=${start.toISOString()}&startedAtLt=${end.toISOString()}&limit=1000`, {
+          headers: { Authorization: `Bearer ${vapiKey}` },
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const calls = Array.isArray(data) ? data : (data.results || []);
+          vapiCount = calls.length;
+          vapiCostUsd = calls.reduce((s, c) => s + (parseFloat(c.cost) || 0), 0);
+          vapiSource = 'live';
+        }
+      }
+    } catch { /* Vapi optional */ }
 
-    for (const a of actions) {
-      const rate = RATES[a.type] || 0;
-      const cost = parseFloat((a._count.id * rate).toFixed(2));
-      breakdown[a.type] = { count: a._count.id, cost };
-      total += cost;
-    }
+    const breakdown = {
+      claude:  { count: claudeLog._count.id || 0, costUsd: claudeLog._sum.costUsd || 0, costRm: (claudeLog._sum.costUsd || 0) * rate, tokens: Math.round(claudeLog._sum.units || 0), source: 'exact' },
+      email:   { count: emailCount, costUsd: emailCount * SG_PER_EMAIL, costRm: emailCount * SG_PER_EMAIL * rate, source: 'calculated' },
+      wa:      { count: waCount, costUsd: waCount * META_MY_RATE, costRm: waCount * META_MY_RATE * rate, source: 'calculated' },
+      call:    { count: vapiCount, costUsd: vapiCostUsd, costRm: vapiCostUsd * rate, source: vapiSource },
+      enrich:  { count: enrichedCount, costUsd: 0, costRm: 0, source: 'subscription', note: 'Apollo Professional — flat RM 465/mo' },
+      scraper: { count: Math.round(scraperLog._sum.units || 0), costUsd: scraperLog._sum.costUsd || 0, costRm: (scraperLog._sum.costUsd || 0) * rate, source: 'exact' },
+    };
 
-    // Apollo enrichment cost (RM 0.50/lead enriched this month via Professional plan usage estimate)
-    if (enrichedCount > 0) {
-      const enrichCost = parseFloat((enrichedCount * 0.50).toFixed(2));
-      breakdown.enrich = { count: enrichedCount, cost: enrichCost };
-      total += enrichCost;
-    }
+    const total = parseFloat(
+      Object.values(breakdown).reduce((s, v) => s + (v.costRm || 0), 0).toFixed(2)
+    );
 
     res.json({
       month,
-      total: parseFloat(total.toFixed(2)),
+      total,
       budget: settings?.monthlyBudget || 1000,
+      usdRmRate: rate,
       breakdown,
+      refreshedAt: new Date().toISOString(),
     });
   } catch (e) { next(e); }
 });
 
 router.patch('/budget', requireAuth, async (req, res, next) => {
   try {
-    const { budget } = req.body;
-    if (!budget || budget < 0) return res.status(400).json({ error: 'Invalid budget' });
+    const { budget, usdRmRate } = req.body;
+    const data = {};
+    if (budget !== undefined) data.monthlyBudget = parseFloat(budget);
+    if (usdRmRate !== undefined) data.usdRmRate = parseFloat(usdRmRate);
+    if (!Object.keys(data).length) return res.status(400).json({ error: 'Nothing to update' });
     await prisma.appSettings.upsert({
       where: { id: 'global' },
-      create: { id: 'global', monthlyBudget: parseFloat(budget) },
-      update: { monthlyBudget: parseFloat(budget) },
+      create: { id: 'global', ...data },
+      update: data,
     });
     res.json({ ok: true });
   } catch (e) { next(e); }
