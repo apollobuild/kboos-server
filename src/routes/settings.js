@@ -178,6 +178,31 @@ router.delete('/prompt-templates/:id', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.post('/prompt-templates/:id/test-send', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const template = (s?.promptTemplates || []).find(t => t.id === req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const fill = str => (str || '')
+      .replace(/\{\{first_name\}\}/g, 'Ahmad')
+      .replace(/\{\{company\}\}/g, 'Naim Holdings')
+      .replace(/\{\{industry\}\}/g, 'Construction')
+      .replace(/\{\{city\}\}/g, 'Kuching')
+      .replace(/\{\{title\}\}/g, 'Manager')
+      .replace(/\{\{phone\}\}/g, '+6012-345 6789');
+
+    const subject = fill(template.subject || template.label || 'Test Email');
+    const body = fill(template.body || template.content || '');
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user?.email) return res.status(400).json({ error: 'No email on your account' });
+
+    await sendEmail({ to: user.email, subject: `[TEST] ${subject}`, body });
+    res.json({ ok: true, sentTo: user.email });
+  } catch (e) { next(e); }
+});
+
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
     const { email, name, role, bizId } = req.body;

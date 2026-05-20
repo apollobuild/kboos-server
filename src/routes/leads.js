@@ -34,6 +34,22 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
         msg: `${lead.name} (${lead.company}) marked as ${req.body.status.replace(/_/g, ' ')}`,
         tag: 'Leads',
       }}).catch(() => {});
+
+      // Track opens/replies against the currently active template
+      if (['opened', 'replied', 'hot'].includes(req.body.status)) {
+        const statKey = req.body.status === 'opened' ? 'opens' : 'replies';
+        const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
+        if (s?.promptTemplates?.length) {
+          const active = s.promptTemplates.find(t => t.active);
+          if (active) {
+            const updated = s.promptTemplates.map(t => t.id === active.id
+              ? { ...t, stats: { opens: 0, replies: 0, ...(t.stats || {}), [statKey]: ((t.stats?.[statKey] || 0) + 1) } }
+              : t
+            );
+            await prisma.appSettings.update({ where: { id: 'global' }, data: { promptTemplates: updated } }).catch(() => {});
+          }
+        }
+      }
     }
     res.json(lead);
   } catch (e) { next(e); }

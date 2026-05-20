@@ -43,22 +43,41 @@ Return JSON with exactly these 4 keys. All values must be plain strings (no nest
 
 export async function generateEmail({ bizName, campaignName, prompt, lead }) {
   const client = await getClient();
+  const lang = lead.lang === 'MS' || lead.lang === 'BM' ? 'Bahasa Malaysia'
+    : lead.lang === 'ZH' ? 'Mandarin Chinese'
+    : 'English';
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 512,
-    system: 'You are a B2B cold email expert for Malaysian companies. Return only valid JSON.',
+    max_tokens: 1024,
+    system: `You are a cold email expert specialising in Malaysian B2B outreach. You write emails that get replies, not just opens.
+
+Non-negotiable rules:
+- Subject: under 7 words. Never starts with the company name or "I". Must use one of these formulas: curiosity gap ("Still losing leads to competitors in Johor?"), hyper-specific stat ("3 ${lead.title || 'managers'} in ${lead.company || 'your industry'} replied this week"), social proof ("How [Similar Co] added 40% pipeline"), or direct question ("Quick question about {{company}}")
+- Body first line: NEVER starts with "I" — open with the prospect, their company, or a relevant observation
+- Maximum 5 sentences before the CTA
+- One CTA only — never give the reader multiple options
+- Always end with a P.S. line — it gets read first and lifts reply rate significantly
+- Banned words and phrases: synergy, leverage, solutions, world-class, "I hope this email finds you well", "please find attached", "I wanted to reach out", "touching base"
+- Reference local Malaysian context where natural: city names, challenges like talent shortage, SST compliance, rising logistics costs, digital transformation pressure
+- Match Malaysian relationship-first culture: warm tone, not aggressive American-style sales
+
+Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `Write a cold email for ${bizName} — campaign: ${campaignName}.
 Lead: ${lead.name} at ${lead.company}, ${lead.title}
-Language: ${lead.lang === 'BM' ? 'Bahasa Malaysia' : 'English'}
+Language: ${lang}
 Style guidance: ${prompt}
 
-Return JSON: { "subject": "...", "body": "..." }
-Body under 130 words. Natural tone, not salesy.`
+Return JSON with exactly these keys:
+{
+  "subjects": ["subject variant 1", "subject variant 2", "subject variant 3"],
+  "body": "full email body under 130 words, keeping {{variables}} intact, ending with a P.S. line"
+}`
     }]
   });
-  return parseJSON(msg.content[0].text);
+  const parsed = parseJSON(msg.content[0].text);
+  return { ...parsed, subject: Array.isArray(parsed.subjects) ? parsed.subjects[0] : parsed.subject || '' };
 }
 
 export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub }) {
