@@ -126,6 +126,58 @@ router.delete('/users/:id', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ── Prompt Templates ──
+router.get('/prompt-templates', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    res.json(s?.promptTemplates || []);
+  } catch (e) { next(e); }
+});
+
+router.post('/prompt-templates', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const existing = (s?.promptTemplates || []);
+    const newTemplate = {
+      id: `v${Date.now()}`,
+      label: req.body.label || `v${existing.length + 1} — Custom`,
+      active: req.body.active || false,
+      content: req.body.content,
+      openRate: req.body.openRate || '—',
+      replyRate: req.body.replyRate || '—',
+      createdAt: new Date().toISOString(),
+    };
+    // If setting as active, deactivate others
+    const updated = req.body.active
+      ? existing.map(t => ({ ...t, active: false }))
+      : existing;
+    const promptTemplates = [newTemplate, ...updated];
+    await prisma.appSettings.upsert({ where: { id: 'global' }, create: { id: 'global', promptTemplates }, update: { promptTemplates } });
+    res.json(newTemplate);
+  } catch (e) { next(e); }
+});
+
+router.patch('/prompt-templates/:id', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    let templates = s?.promptTemplates || [];
+    // If activating, deactivate all others first
+    if (req.body.active) templates = templates.map(t => ({ ...t, active: false }));
+    templates = templates.map(t => t.id === req.params.id ? { ...t, ...req.body } : t);
+    await prisma.appSettings.update({ where: { id: 'global' }, data: { promptTemplates: templates } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.delete('/prompt-templates/:id', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const promptTemplates = (s?.promptTemplates || []).filter(t => t.id !== req.params.id);
+    await prisma.appSettings.update({ where: { id: 'global' }, data: { promptTemplates } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
     const { email, name, role, bizId } = req.body;

@@ -110,9 +110,10 @@ model AppSettings {
   apiKeysEnc      Json    @default("{}")
   driveConnected  Boolean @default(false)
   billingSchedule String  @default("weekly")
-  waTemplates     Json    @default("[]")
-  domains         Json    @default("[]")
-  team            Json    @default("[]")
+  waTemplates      Json    @default("[]")
+  domains          Json    @default("[]")
+  team             Json    @default("[]")
+  promptTemplates  Json    @default("[]")
 }
 
 model Wallet {
