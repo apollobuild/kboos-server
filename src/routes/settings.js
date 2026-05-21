@@ -203,6 +203,73 @@ router.post('/prompt-templates/:id/test-send', requireAuth, async (req, res, nex
   } catch (e) { next(e); }
 });
 
+// ── Generic template CRUD factory ──
+function registerTemplateCRUD(router, routePrefix, settingsField) {
+  router.get(`/${routePrefix}`, requireAuth, async (req, res, next) => {
+    try {
+      const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+      res.json(s?.[settingsField] || []);
+    } catch (e) { next(e); }
+  });
+
+  router.post(`/${routePrefix}`, requireAuth, async (req, res, next) => {
+    try {
+      const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+      const existing = s?.[settingsField] || [];
+      const newTpl = {
+        id: `v${Date.now()}`,
+        label: req.body.label || `v${existing.length + 1} — Custom`,
+        active: req.body.active || false,
+        body: req.body.body || req.body.content || '',
+        lang: req.body.lang || 'all',
+        type: req.body.type || routePrefix.replace('-templates', ''),
+        stats: { opens: 0, replies: 0 },
+        createdAt: new Date().toISOString(),
+      };
+      const updated = req.body.active ? existing.map(t => ({ ...t, active: false })) : existing;
+      const templates = [newTpl, ...updated];
+      await prisma.appSettings.upsert({ where: { id: 'global' }, create: { id: 'global', [settingsField]: templates }, update: { [settingsField]: templates } });
+      res.json(newTpl);
+    } catch (e) { next(e); }
+  });
+
+  router.patch(`/${routePrefix}/:id`, requireAuth, async (req, res, next) => {
+    try {
+      const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+      let templates = s?.[settingsField] || [];
+      if (req.body.active) templates = templates.map(t => ({ ...t, active: false }));
+      templates = templates.map(t => t.id === req.params.id ? { ...t, ...req.body } : t);
+      await prisma.appSettings.update({ where: { id: 'global' }, data: { [settingsField]: templates } });
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  router.delete(`/${routePrefix}/:id`, requireAuth, async (req, res, next) => {
+    try {
+      const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+      const templates = (s?.[settingsField] || []).filter(t => t.id !== req.params.id);
+      await prisma.appSettings.update({ where: { id: 'global' }, data: { [settingsField]: templates } });
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+}
+
+registerTemplateCRUD(router, 'wa-templates', 'waTemplates');
+registerTemplateCRUD(router, 'voice-templates', 'voiceTemplates');
+
+// ── Preferences (notifications + branding) ──
+router.patch('/preferences', requireAuth, async (req, res, next) => {
+  try {
+    const { notifications, branding } = req.body;
+    const data = {};
+    if (notifications !== undefined) data.notifications = notifications;
+    if (branding !== undefined) data.branding = branding;
+    if (Object.keys(data).length === 0) return res.json({ ok: true });
+    await prisma.appSettings.upsert({ where: { id: 'global' }, create: { id: 'global', ...data }, update: data });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // Google Drive service account
 router.post('/drive-service-account', requireAuth, async (req, res, next) => {
   try {

@@ -16,6 +16,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 router.patch('/:id/toggle', requireAuth, async (req, res, next) => {
   try {
     const c = await prisma.campaign.findUnique({ where: { id: parseInt(req.params.id) } });
+    if (!c) return res.status(404).json({ error: 'Campaign not found' });
     const next_status = c.status === 'active' ? 'paused' : 'active';
     const updated = await prisma.campaign.update({ where: { id: c.id }, data: { status: next_status } });
     await prisma.activity.create({ data: {
@@ -38,10 +39,11 @@ router.delete('/:id', requireAuth, async (req, res, next) => {
 // POST /campaigns/:id/start — launch campaign, engine takes over
 router.post('/:id/start', requireAuth, async (req, res, next) => {
   try {
-    const { dailyLimit = 200 } = req.body;
+    const rawLimit = parseInt(req.body.dailyLimit) || 200;
+    const dailyLimit = Math.max(50, Math.min(500, rawLimit));
     const campaign = await prisma.campaign.update({
       where: { id: parseInt(req.params.id) },
-      data: { status: 'active', startedAt: new Date(), dailyLimit: parseInt(dailyLimit) },
+      data: { status: 'active', startedAt: new Date(), dailyLimit },
     });
     await prisma.activity.create({ data: {
       color: 'green',

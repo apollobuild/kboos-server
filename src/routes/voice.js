@@ -30,7 +30,7 @@ router.post('/call', requireAuth, async (req, res, next) => {
     // Update lead status
     await prisma.lead.update({
       where: { id: lead.id },
-      data: { status: 'called', last: 'just now' },
+      data: { status: 'call_initiated', last: 'just now' },
     });
 
     await prisma.activity.create({
