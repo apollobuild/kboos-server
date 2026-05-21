@@ -106,6 +106,73 @@ Write a short, natural reply in the same language as their message. Return just 
   return msg.content[0].text.trim();
 }
 
+export async function generateFromOffer({ bizName, industry, service, dreamOutcome, proof, timeToResult, effortRemoved, riskReversal, lang }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+  const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 2400,
+    system: `You are an elite B2B copywriter who applies Alex Hormozi's $100M Offers framework. You write for Malaysian businesses. Language: ${langLabel}. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `Using Hormozi's Value Equation (Value = Dream Outcome × Perceived Likelihood / Time Delay × Effort), generate outreach copy for all 3 channels.
+
+BUSINESS: ${bizName}
+INDUSTRY: ${industry}
+SERVICE: ${service}
+
+OFFER INPUTS:
+- Dream Outcome: ${dreamOutcome}
+- Proof/Results: ${proof}
+- Time to First Result: ${timeToResult}
+- What We Handle (effort removed): ${effortRemoved}
+- Risk Reversal: ${riskReversal}
+
+CHANNEL RULES:
+
+EMAIL (emailSubject + emailBody):
+- Subject: under 7 words, never start with "I" or company name, use curiosity/stat/social proof formula
+- Body: 120-150 words, open with THEIR situation not yours, lead with dream outcome, one proof point, eliminate effort fear, one soft CTA, end with P.S. line
+- No banned phrases: "I hope this email finds you well", "I wanted to reach out", "synergy", "solutions"
+
+WHATSAPP (whatsapp):
+- Under 90 words, casual but professional, start with their name, open with a curiosity hook about their dream outcome, end with ONE soft question
+- No pitching — just open the door
+
+VOICE AGENT SYSTEM PROMPT (voiceSystemPrompt):
+Write a FULL behavioral system prompt (400-500 words) for an AI voice agent — NOT a script.
+The agent must:
+1. Sound 100% human — never confirm or deny being AI unless directly asked
+2. Open naturally, get permission to talk (2 minutes)
+3. Use the offer to build curiosity, not to pitch
+4. Handle these objections naturally with short responses:
+   - "I'm busy" → reschedule to specific time
+   - "Not interested" → curiosity question about why
+   - "Who are you?" / "How did you get my number?" → honest industry-targeting explanation
+   - "Send me an email" → agree + pivot back to one question
+   - "I'll think about it" → uncover the real hesitation
+   - "We already have someone" → ask how it's going
+5. Re-engage off-topic conversations with a bridge phrase
+6. GOAL: Book a discovery call (get day + time) OR get strong interest → offer to connect them to the specialist right now
+7. Rules: short sentences, mirror their energy, use name max twice, max 3 min unless engaged, end gracefully if not a fit
+8. For Malaysian prospects: natural code-switching (BM/EN mix) builds rapport
+
+Return JSON:
+{
+  "emailSubject": "...",
+  "emailBody": "...",
+  "whatsapp": "...",
+  "voiceSystemPrompt": "..."
+}`
+    }]
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_from_offer' });
+  return parseJSON(msg.content[0].text);
+}
+
 export async function testConnection(apiKey) {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({

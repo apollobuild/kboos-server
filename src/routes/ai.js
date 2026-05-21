@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { generateBrief, generateEmail, suggestReply, testConnection } from '../services/claude.js';
+import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection } from '../services/claude.js';
 import { getApiKey, saveApiKey } from '../services/apiKeys.js';
 
 const router = Router();
@@ -11,6 +11,10 @@ router.post('/generate-brief', requireAuth, async (req, res, next) => {
 
 router.post('/generate-email', requireAuth, async (req, res, next) => {
   try { res.json(await generateEmail(req.body)); } catch (e) { next(e); }
+});
+
+router.post('/generate-from-offer', requireAuth, async (req, res, next) => {
+  try { res.json(await generateFromOffer(req.body)); } catch (e) { next(e); }
 });
 
 router.post('/suggest-reply', requireAuth, async (req, res, next) => {

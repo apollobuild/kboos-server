@@ -26,29 +26,51 @@ router.post('/generate', requireAuth, async (req, res, next) => {
     const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
     const toneLabel = tone || 'Professional';
 
+    // Load active templates if they exist — use them as base for personalisation
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
+    const activeEmail = settings?.promptTemplates?.find(t => t.active);
+    const activeWA    = settings?.waTemplates?.find(t => t.active);
+    const activeVoice = settings?.voiceTemplates?.find(t => t.active);
+
+    const emailInstruction = activeEmail
+      ? `Personalise this email template for the prospect. Keep the structure and offer — only swap in their name, company, industry, role and city naturally:\n\nSubject: ${activeEmail.subject || ''}\n\n${activeEmail.body || activeEmail.content || ''}`
+      : `Write a compelling cold email: subject under 7 words (curiosity/stat/proof formula), body under 140 words, open with their situation not yours, one soft CTA, end with P.S. line.`;
+
+    const waInstruction = activeWA
+      ? `Personalise this WhatsApp template for the prospect. Keep the offer and tone — swap in their details:\n\n${activeWA.body || activeWA.content || ''}`
+      : `Write a WhatsApp message under 90 words: start with their name, one curiosity hook, end with one soft question. No pitching.`;
+
+    const voiceInstruction = activeVoice
+      ? `This is the voice agent system prompt to use. Personalise any placeholders for this prospect:\n\n${activeVoice.body || activeVoice.content || ''}`
+      : `Write a FULL voice agent behavioral system prompt (not a script). The agent must sound human, get permission to talk, present the offer naturally, handle common objections (busy/not interested/who are you/send email), re-engage off-topic conversations, and close with booking a call or offering to connect to the specialist. Include all objection handlers and rules of behavior. 300-400 words.`;
+
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 1800,
       system: 'You are a B2B outreach expert for KOBIS, a Malaysian outreach automation company. Return only valid JSON.',
       messages: [{
         role: 'user',
-        content: `Generate personalised outreach for this prospect on behalf of KOBIS Berhad (an AI-powered B2B outreach platform):
+        content: `Generate personalised outreach for this prospect:
 
 Prospect: ${name}
-Title: ${title}
+Title: ${title || 'Decision Maker'}
 Company: ${company}
 Industry: ${industry}
 Language: ${langLabel}
 Tone: ${toneLabel}
 
-KOBIS helps Malaysian businesses automate personalised outreach via email, WhatsApp and AI voice calls.
+EMAIL INSTRUCTIONS: ${emailInstruction}
+
+WHATSAPP INSTRUCTIONS: ${waInstruction}
+
+VOICE AGENT INSTRUCTIONS: ${voiceInstruction}
 
 Return JSON with exactly these keys:
 {
-  "emailSubject": "compelling subject line, personalised",
-  "emailBody": "150 word max email body, personalised to their industry and role, natural not salesy",
-  "whatsapp": "WhatsApp message under 80 words, casual but professional, mention their name and company",
-  "voiceScript": "30-second voice call script, natural speech, mentions prospect name and company, asks if they have 2 minutes"
+  "emailSubject": "...",
+  "emailBody": "...",
+  "whatsapp": "...",
+  "voiceScript": "..."
 }`
       }]
     });
