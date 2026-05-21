@@ -18,7 +18,12 @@ router.post('/generate-from-offer', requireAuth, async (req, res, next) => {
 });
 
 router.post('/suggest-reply', requireAuth, async (req, res, next) => {
-  try { const reply = await suggestReply(req.body); res.json({ reply }); } catch (e) { next(e); }
+  try {
+    const result = await suggestReply(req.body);
+    // suggestReply now returns { reply, stage, escalate } — extract text for backward compat
+    const reply = typeof result === 'string' ? result : result.reply;
+    res.json({ reply });
+  } catch (e) { next(e); }
 });
 
 router.get('/test', requireAuth, async (req, res, next) => {
