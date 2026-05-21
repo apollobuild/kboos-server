@@ -324,4 +324,32 @@ router.post('/user', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /settings/reply-persona
+router.post('/reply-persona', requireAuth, async (req, res, next) => {
+  try {
+    const { name, role, style, bizId } = req.body;
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const personas = Array.isArray(s?.replyPersonas) ? s.replyPersonas : [];
+    const idx = personas.findIndex(p => p.bizId === (bizId || null));
+    if (idx >= 0) personas[idx] = { name, role, style, bizId: bizId || null };
+    else personas.push({ name, role, style, bizId: bizId || null });
+    const updated = await prisma.appSettings.update({ where: { id: 'global' }, data: { replyPersonas: personas } });
+    res.json(updated.replyPersonas);
+  } catch (e) { next(e); }
+});
+
+// POST /settings/reply-goal
+router.post('/reply-goal', requireAuth, async (req, res, next) => {
+  try {
+    const { bizId, goalType, ctaText } = req.body;
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const goals = Array.isArray(s?.replyGoals) ? s.replyGoals : [];
+    const idx = goals.findIndex(g => g.bizId === (bizId || null));
+    if (idx >= 0) goals[idx] = { bizId: bizId || null, goalType, ctaText };
+    else goals.push({ bizId: bizId || null, goalType, ctaText });
+    const updated = await prisma.appSettings.update({ where: { id: 'global' }, data: { replyGoals: goals } });
+    res.json(updated.replyGoals);
+  } catch (e) { next(e); }
+});
+
 export default router;

@@ -105,6 +105,10 @@ model Reply {
   status    String   @default("unread")
   unsub     Boolean  @default(false)
   hot       Boolean  @default(false)
+  thread      Json    @default("[]")
+  aiDraft     String?
+  aiStage     String  @default("cold")
+  aiEscalate  Boolean @default(false)
   createdAt DateTime @default(now())
 }
 
@@ -131,6 +135,8 @@ model AppSettings {
   driveServiceAccountKey Json?
   monthlyBudget   Float   @default(1000)
   usdRmRate       Float   @default(4.70)
+  replyPersonas  Json @default("[]")
+  replyGoals     Json @default("[]")
 }
 
 model ApiUsageLog {

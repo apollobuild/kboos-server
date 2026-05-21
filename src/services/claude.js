@@ -85,25 +85,96 @@ Return JSON with exactly these keys:
   return { ...parsed, subject: Array.isArray(parsed.subjects) ? parsed.subjects[0] : parsed.subject || '' };
 }
 
-export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub }) {
+export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub, thread = [], persona = {}, goal = '', bizName = '', stage = 'cold' }) {
   const client = await getClient();
-  const replyModel = 'claude-sonnet-4-6';
+  const model = 'claude-sonnet-4-6';
+
+  const personaName  = persona.name  || 'Amirah';
+  const personaRole  = persona.role  || 'Business Development Executive';
+  const personaStyle = persona.style || 'manglish'; // formal | casual | manglish
+
+  const styleGuide = personaStyle === 'formal'
+    ? 'Write formally. Full sentences. No slang. Professional sign-off.'
+    : personaStyle === 'casual'
+    ? 'Write casually. Short sentences. Friendly, warm tone. No formal greetings.'
+    : 'Write in natural Malaysian Manglish — mix BM and English naturally where it fits. Use "la", "boleh", "kan" sparingly and only when it feels organic. Never sound forced.';
+
+  const stageGuide = {
+    cold:        'They just responded for the first time. Build rapport. Ask one curious question. No hard sell.',
+    engaged:     'They\'re interested. Make a soft ask — invite them to take one small next step.',
+    qualifying:  'They want details. Make a direct ask toward the goal. Offer to make it easy.',
+    committed:   'They said yes or seem ready. Confirm the next step and hand off to the team.',
+    closed:      'Done. No reply needed.',
+  }[stage] || 'Build rapport and move toward the goal.';
+
+  const threadHistory = thread.length > 0
+    ? '\n\nConversation so far (oldest first):\n' + thread.slice(-6).map(t =>
+        `[${t.role === 'lead' ? senderName : personaName}]: ${t.content}`
+      ).join('\n')
+    : '';
+
+  const goalContext = goal
+    ? `\nYour goal: guide the conversation toward — ${goal}. Always be moving there, never forcing it.`
+    : '';
+
+  const unsubInstructions = isUnsub
+    ? 'They want to unsubscribe. Acknowledge warmly, confirm removal, wish them well. No further selling.'
+    : '';
+
+  const hotInstructions = isHot
+    ? 'They are very interested / hot lead. Move quickly to confirm next step. Escalate immediately after this reply.'
+    : '';
+
   const msg = await client.messages.create({
-    model: replyModel,
-    max_tokens: 256,
-    system: 'You handle B2B outreach replies for a Malaysian company. Be concise and professional.',
+    model,
+    max_tokens: 512,
+    system: `You are ${personaName}, ${personaRole} at ${bizName || 'our company'} in Malaysia. You are handling a ${channel} conversation with a potential client.
+
+${styleGuide}
+
+Critical rules:
+- NEVER say you are an AI, bot, or automated system. If asked, deflect naturally ("haha I'm just quick with replies la").
+- NEVER use bullet points or formal "Dear Sir/Madam" greetings in WhatsApp.
+- Mirror the lead's language — if they write BM, reply in BM. If they write English, reply English. If Manglish, match it.
+- Match their message length — if they sent 1 sentence, reply in 1-2 sentences max.
+- Never use banned phrases: "synergy", "solutions", "I hope this email finds you well", "Please find attached".
+- End WhatsApp messages conversationally, never with formal sign-offs.
+- Be warm, human, and patient.
+
+Return ONLY valid JSON — no markdown, no extra text.`,
     messages: [{
       role: 'user',
-      content: `Reply to this ${channel} message from ${senderName} at ${company}:
+      content: `${senderName} from ${company} sent this via ${channel}:
 "${message}"
-${isUnsub ? 'They want to unsubscribe — acknowledge and confirm removal.' : ''}
-${isHot ? 'They seem very interested — schedule a meeting.' : ''}
+${threadHistory}
+${goalContext}
+${unsubInstructions}
+${hotInstructions}
 
-Write a short, natural reply in the same language as their message. Return just the reply text, no JSON.`
+Current conversation stage: ${stage}
+Stage guidance: ${stageGuide}
+
+${unsubInstructions || hotInstructions ? '' : `What stage should this conversation move to? Options: cold, engaged, qualifying, committed, closed.
+Should I escalate to the human team? Escalate if: they said yes/want to proceed, they mention pricing, they seem frustrated, or they are clearly ready to commit.`}
+
+Return JSON:
+{
+  "reply": "the reply message text only",
+  "stage": "cold|engaged|qualifying|committed|closed",
+  "escalate": false,
+  "escalateReason": ""
+}`
     }]
   });
-  logClaude({ model: replyModel, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'suggest_reply' });
-  return msg.content[0].text.trim();
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_reply' });
+
+  try {
+    const cleaned = msg.content[0].text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return { reply: msg.content[0].text.trim(), stage, escalate: isHot, escalateReason: '' };
+  }
 }
 
 export async function generateFromOffer({ bizName, industry, service, dreamOutcome, proof, timeToResult, effortRemoved, riskReversal, lang }) {
