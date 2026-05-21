@@ -18,13 +18,27 @@ function parseJSON(text) {
 // POST /demo/generate — generate personalised content for all 3 channels
 router.post('/generate', requireAuth, async (req, res, next) => {
   try {
-    const { name, company, industry, title, lang, tone } = req.body;
+    const { name, company, industry, title, lang, tone, city, currentMethod, challenge, monthlyGoal } = req.body;
     const key = await getApiKey('claude');
     if (!key) return res.status(400).json({ error: 'Claude API key not configured. Go to Settings → API Keys.' });
 
     const client = new Anthropic({ apiKey: key });
     const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
     const toneLabel = tone || 'Professional';
+
+    const methodLabels = {
+      referral: 'relies on referrals only — no active outreach',
+      coldcall: 'does manual cold calling',
+      ads: 'runs social media / Google ads',
+      network: 'attends networking events',
+      nothing: 'is not actively prospecting — struggling to find clients',
+    };
+    const prospectSituation = [
+      `Current client acquisition method: ${methodLabels[currentMethod] || currentMethod}`,
+      challenge ? `Their biggest challenge: ${challenge}` : null,
+      monthlyGoal ? `Their goal: ${monthlyGoal} of qualified meetings` : null,
+      city ? `Based in: ${city}` : null,
+    ].filter(Boolean).join('\n');
 
     // Load active templates if they exist — use them as base for personalisation
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
@@ -50,7 +64,7 @@ router.post('/generate', requireAuth, async (req, res, next) => {
       system: 'You are a B2B outreach expert for KOBIS, a Malaysian outreach automation company. Return only valid JSON.',
       messages: [{
         role: 'user',
-        content: `Generate personalised outreach for this prospect:
+        content: `Generate personalised outreach for this prospect. This is for KBOOS — an AI-powered outreach automation system that helps Malaysian businesses get more qualified meetings on autopilot. The copy must sell KBOOS to this specific prospect by speaking directly to their situation.
 
 Prospect: ${name}
 Title: ${title || 'Decision Maker'}
@@ -58,6 +72,15 @@ Company: ${company}
 Industry: ${industry}
 Language: ${langLabel}
 Tone: ${toneLabel}
+
+PROSPECT'S CURRENT SITUATION (use this to make the copy painfully relevant):
+${prospectSituation}
+
+The email, WhatsApp, and voice agent must:
+- Reference their exact current method as the limitation they're feeling
+- Connect to their specific challenge if provided
+- Paint KBOOS as the bridge to their monthly goal
+- Sound like we already know their business — not a generic pitch
 
 EMAIL INSTRUCTIONS: ${emailInstruction}
 
