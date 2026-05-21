@@ -36,7 +36,7 @@ router.post('/generate', requireAuth, async (req, res, next) => {
     const prospectSituation = [
       `Current client acquisition method: ${methodLabels[currentMethod] || currentMethod}`,
       challenge ? `Their biggest challenge: ${challenge}` : null,
-      monthlyGoal ? `Their goal: ${monthlyGoal} of qualified meetings` : null,
+      monthlyGoal ? `Their dream outcome (Hormozi): ${monthlyGoal} — use this exact outcome as the promise in all copy` : null,
       city ? `Based in: ${city}` : null,
     ].filter(Boolean).join('\n');
 
@@ -76,11 +76,14 @@ Tone: ${toneLabel}
 PROSPECT'S CURRENT SITUATION (use this to make the copy painfully relevant):
 ${prospectSituation}
 
-The email, WhatsApp, and voice agent must:
-- Reference their exact current method as the limitation they're feeling
+Apply Alex Hormozi's Value Equation: Value = (Dream Outcome × Perceived Likelihood) / (Time Delay × Effort).
+The email, WhatsApp, and voice agent MUST:
+- Open with their dream outcome (${monthlyGoal || 'their goal'}) as the hook — not KBOOS features
+- Frame their current method as the bottleneck limiting them from that outcome
 - Connect to their specific challenge if provided
-- Paint KBOOS as the bridge to their monthly goal
+- Show KBOOS as the bridge: "you could [dream outcome] without [current struggle] starting this month"
 - Sound like we already know their business — not a generic pitch
+- NEVER say "book more meetings" if their goal is selling cars, landing catering jobs, enrolling students, etc. — match their industry language exactly
 
 EMAIL INSTRUCTIONS: ${emailInstruction}
 
