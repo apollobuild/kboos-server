@@ -2,9 +2,32 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { makeCall, getCallStatus } from '../services/vapi.js';
+import { getApiKey } from '../services/apiKeys.js';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// GET /voice/phone-numbers — list phone numbers from Vapi
+router.get('/phone-numbers', requireAuth, async (req, res, next) => {
+  try {
+    const key = await getApiKey('vapi');
+    if (!key) return res.status(400).json({ error: 'Vapi API key not configured. Save it in Settings → API Keys first.' });
+    const r = await fetch('https://api.vapi.ai/phone-number', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!r.ok) {
+      const msg = await r.text().catch(() => 'Unknown error');
+      return res.status(r.status).json({ error: `Vapi error: ${msg}` });
+    }
+    const numbers = await r.json();
+    res.json(numbers.map(n => ({
+      id: n.id,
+      number: n.number || n.twilioPhoneNumber || n.vonagePhoneNumber || '(no number)',
+      name: n.name || null,
+      provider: n.provider || (n.twilioPhoneNumber ? 'twilio' : n.vonagePhoneNumber ? 'vonage' : 'vapi'),
+    })));
+  } catch (e) { next(e); }
+});
 
 // POST /voice/call — trigger Vapi call for a lead
 router.post('/call', requireAuth, async (req, res, next) => {
