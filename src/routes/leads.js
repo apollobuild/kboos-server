@@ -30,6 +30,30 @@ router.get('/', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.post('/bulk-import', requireAuth, async (req, res, next) => {
+  try {
+    const { campaignId, leads } = req.body;
+    if (!Array.isArray(leads) || leads.length === 0) return res.status(400).json({ error: 'No leads provided' });
+    const data = leads.map(l => ({
+      campaignId: campaignId ? parseInt(campaignId) : null,
+      name:    (l.name || l.Name || l.full_name || '').trim() || 'Unknown',
+      company: (l.company || l.Company || l.organization || '').trim() || '',
+      title:   (l.title || l.Title || l.job_title || '').trim() || '',
+      email:   (l.email || l.Email || '').trim() || null,
+      phone:   (l.phone || l.Phone || l.mobile || '').trim() || null,
+      status:  'new',
+      score:   0,
+      lang:    'EN',
+      channels: [],
+    }));
+    const created = await prisma.lead.createMany({ data, skipDuplicates: true });
+    if (campaignId) {
+      await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: { increment: created.count } } }).catch(() => {});
+    }
+    res.json({ ok: true, count: created.count });
+  } catch (e) { next(e); }
+});
+
 router.post('/', requireAuth, async (req, res, next) => {
   try { res.json(await prisma.lead.create({ data: req.body })); } catch (e) { next(e); }
 });
