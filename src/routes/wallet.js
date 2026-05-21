@@ -7,6 +7,36 @@ import { getApiKey } from '../services/apiKeys.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+// In-memory FX cache — survives per-process lifetime, DB persists across restarts
+let _fxCache = { rate: null, fetchedAt: null };
+const FX_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+async function getLiveUsdRmRate() {
+  if (_fxCache.rate && _fxCache.fetchedAt && Date.now() - _fxCache.fetchedAt < FX_TTL_MS) {
+    return { rate: _fxCache.rate, source: 'cache', updatedAt: new Date(_fxCache.fetchedAt).toISOString() };
+  }
+  try {
+    const r = await fetch('https://api.frankfurter.app/latest?from=USD&to=MYR');
+    if (!r.ok) throw new Error('API error');
+    const data = await r.json();
+    const rate = data.rates?.MYR;
+    if (!rate) throw new Error('No MYR rate');
+    _fxCache = { rate, fetchedAt: Date.now() };
+    await prisma.appSettings.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', usdRmRate: rate },
+      update: { usdRmRate: rate },
+    }).catch(() => {});
+    return { rate, source: 'live', updatedAt: new Date().toISOString() };
+  } catch {
+    // Fall back to DB value or hardcoded default
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
+    const fallback = settings?.usdRmRate || 4.70;
+    _fxCache = { rate: fallback, fetchedAt: Date.now() };
+    return { rate: fallback, source: 'fallback', updatedAt: new Date().toISOString() };
+  }
+}
+
 async function getWallet() {
   return prisma.wallet.upsert({
     where: { id: 'global' },
@@ -14,6 +44,13 @@ async function getWallet() {
     update: {},
   });
 }
+
+router.get('/fx-rate', requireAuth, async (req, res, next) => {
+  try {
+    const result = await getLiveUsdRmRate();
+    res.json(result);
+  } catch (e) { next(e); }
+});
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
@@ -138,7 +175,7 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
     const dateFilter = (field) => start ? { [field]: { gte: start, lt: end } } : {};
 
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
-    const rate = settings?.usdRmRate || 4.70;
+    const { rate, updatedAt: rateUpdatedAt } = await getLiveUsdRmRate();
 
     // Claude — exact from ApiUsageLog (real token costs)
     const claudeLog = await prisma.apiUsageLog.aggregate({
@@ -200,6 +237,7 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
       total,
       budget: settings?.monthlyBudget || 1000,
       usdRmRate: rate,
+      rateUpdatedAt,
       breakdown,
       refreshedAt: new Date().toISOString(),
     });
