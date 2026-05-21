@@ -5,6 +5,7 @@ import { makeCall } from '../services/vapi.js';
 import { sendEmail } from '../services/sendgrid.js';
 import { sendMessage } from '../services/wati.js';
 import { getApiKey } from '../services/apiKeys.js';
+import { logClaude } from '../services/costLogger.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
@@ -115,6 +116,7 @@ Return JSON with exactly these keys:
       }]
     });
 
+    logClaude({ model: 'claude-sonnet-4-6', inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'live_demo' });
     res.json(parseJSON(msg.content[0].text));
   } catch (e) { next(e); }
 });

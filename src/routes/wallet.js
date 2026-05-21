@@ -131,31 +131,31 @@ const SG_PER_EMAIL = 0.0004;
 router.get('/spend-summary', requireAuth, async (req, res, next) => {
   try {
     const now = new Date();
+    const allTime = req.query.all === '1';
     const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const start = new Date(`${month}-01T00:00:00.000Z`);
-    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    const start = allTime ? null : new Date(`${month}-01T00:00:00.000Z`);
+    const end   = allTime ? null : new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    const dateFilter = (field) => start ? { [field]: { gte: start, lt: end } } : {};
 
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
     const rate = settings?.usdRmRate || 4.70;
 
     // Claude — exact from ApiUsageLog (real token costs)
     const claudeLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'claude', createdAt: { gte: start, lt: end } },
+      where: { service: 'claude', ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
       _count: { id: true },
     });
 
-    // Outscraper — exact from ApiUsageLog (records × $0.001)
     const scraperLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'outscraper', createdAt: { gte: start, lt: end } },
+      where: { service: 'outscraper', ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
     });
 
-    // Email + WA counts from CampaignAction
     const [emailCount, waCount, enrichedCount] = await Promise.all([
-      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', sentAt: { gte: start, lt: end } } }),
-      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', sentAt: { gte: start, lt: end } } }),
-      prisma.lead.count({ where: { enriched: true, enrichedAt: { gte: start, lt: end } } }),
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', ...dateFilter('sentAt') } }),
+      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', ...dateFilter('sentAt') } }),
+      prisma.lead.count({ where: { enriched: true, ...dateFilter('enrichedAt') } }),
     ]);
 
     // Vapi — fetch real call costs from their API
@@ -166,7 +166,10 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
       const { getApiKey } = await import('../services/apiKeys.js');
       const vapiKey = await getApiKey('vapi');
       if (vapiKey) {
-        const r = await fetch(`https://api.vapi.ai/call?startedAtGt=${start.toISOString()}&startedAtLt=${end.toISOString()}&limit=1000`, {
+        const vapiUrl = start
+          ? `https://api.vapi.ai/call?startedAtGt=${start.toISOString()}&startedAtLt=${end.toISOString()}&limit=1000`
+          : `https://api.vapi.ai/call?limit=1000`;
+        const r = await fetch(vapiUrl, {
           headers: { Authorization: `Bearer ${vapiKey}` },
         });
         if (r.ok) {
@@ -193,7 +196,7 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
     );
 
     res.json({
-      month,
+      month: allTime ? 'all' : month,
       total,
       budget: settings?.monthlyBudget || 1000,
       usdRmRate: rate,
