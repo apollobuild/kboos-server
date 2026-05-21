@@ -5,6 +5,24 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+router.get('/:id/actions', requireAuth, async (req, res, next) => {
+  try {
+    const actions = await prisma.campaignAction.findMany({
+      where: { leadId: parseInt(req.params.id) },
+      orderBy: { sentAt: 'asc' },
+    });
+    res.json(actions);
+  } catch (e) { next(e); }
+});
+
+router.get('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const lead = await prisma.lead.findUnique({ where: { id: parseInt(req.params.id) } });
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    res.json(lead);
+  } catch (e) { next(e); }
+});
+
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const where = req.query.campaignId ? { campaignId: parseInt(req.query.campaignId) } : {};

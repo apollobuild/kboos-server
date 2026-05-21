@@ -90,6 +90,7 @@ model Lead {
   enriched         Boolean   @default(false)
   enrichedAt       DateTime?
   enrichmentNote   String?
+  note             String    @default("")
   createdAt        DateTime  @default(now())
 }
 
