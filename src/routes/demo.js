@@ -58,32 +58,46 @@ router.post('/generate', requireAuth, async (req, res, next) => {
       ? `This is the voice agent system prompt to use. Personalise any placeholders for this prospect:\n\n${activeVoice.body || activeVoice.content || ''}`
       : `Write a FULL voice agent behavioral system prompt (not a script). The agent must sound human, get permission to talk, present the offer naturally, handle common objections (busy/not interested/who are you/send email), re-engage off-topic conversations, and close with booking a call or offering to connect to the specialist. Include all objection handlers and rules of behavior. 300-400 words.`;
 
+    const kboosOffer = `
+KBOOS CORE OFFER (this is what you're selling — use Hormozi's Value Equation throughout):
+- Dream Outcome: ${monthlyGoal || 'consistent new clients every month'} — without cold calling, without referral dependency, without hiring more staff
+- Proof: 200+ campaigns run across Malaysia, average 23% reply rate — 3x industry average
+- Time to First Result: First replies within 48 hours of campaign launch
+- Effort Removed: KOBIS builds the prospect list, AI writes every message, handles every follow-up, sends WhatsApp + email + AI voice call automatically — the client just closes the deals that land in their inbox
+- Risk Reversal: If they don't see replies in the first 7 days, we rebuild the campaign completely — free, no questions asked
+- Guarantee: The first deal they close through KBOOS pays for the entire year's subscription
+
+INDUSTRY CONTEXT: This prospect is in ${industry} in Malaysia. Use their industry language — NOT generic "meetings" or "leads" language. If they sell cars, talk about selling cars. If they do catering, talk about bookings. Make the copy feel like you've run campaigns for their exact type of business before.`;
+
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1800,
-      system: 'You are a B2B outreach expert for KOBIS, a Malaysian outreach automation company. Return only valid JSON.',
+      max_tokens: 2000,
+      system: `You are an elite B2B copywriter for KOBIS, a Malaysian AI outreach automation company. You apply Alex Hormozi's $100M Offers framework. Your copy creates the "this offer is too good to miss" feeling. Return only valid JSON.`,
       messages: [{
         role: 'user',
-        content: `Generate personalised outreach for this prospect. This is for KBOOS — an AI-powered outreach automation system that helps Malaysian businesses get more qualified meetings on autopilot. The copy must sell KBOOS to this specific prospect by speaking directly to their situation.
+        content: `Write personalised outreach that sells KBOOS to this specific prospect. Make it so good they feel it would be a mistake to say no.
 
-Prospect: ${name}
+PROSPECT:
+Name: ${name}
 Title: ${title || 'Decision Maker'}
 Company: ${company}
 Industry: ${industry}
+City: ${city || 'Malaysia'}
 Language: ${langLabel}
-Tone: ${toneLabel}
 
-PROSPECT'S CURRENT SITUATION (use this to make the copy painfully relevant):
+THEIR SITUATION (make the copy painfully specific to this):
 ${prospectSituation}
 
-Apply Alex Hormozi's Value Equation: Value = (Dream Outcome × Perceived Likelihood) / (Time Delay × Effort).
-The email, WhatsApp, and voice agent MUST:
-- Open with their dream outcome (${monthlyGoal || 'their goal'}) as the hook — not KBOOS features
-- Frame their current method as the bottleneck limiting them from that outcome
-- Connect to their specific challenge if provided
-- Show KBOOS as the bridge: "you could [dream outcome] without [current struggle] starting this month"
-- Sound like we already know their business — not a generic pitch
-- NEVER say "book more meetings" if their goal is selling cars, landing catering jobs, enrolling students, etc. — match their industry language exactly
+${kboosOffer}
+
+COPY RULES — non-negotiable:
+1. Lead with their dream outcome (${monthlyGoal || 'their goal'}) — not KBOOS, not features, not us
+2. Name the bottleneck: their current method is why they're not hitting that outcome yet
+3. Position KBOOS as the bridge that removes the effort, not just another tool
+4. Use their exact industry language — if they sell cars say "sell cars", if they do catering say "catering bookings"
+5. Include one specific proof point (reply rates, similar business results, 48-hour guarantee)
+6. End with the risk reversal — eliminate all fear of trying it
+7. Sound like you already know their market — not a cold pitch
 
 EMAIL INSTRUCTIONS: ${emailInstruction}
 
