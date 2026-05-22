@@ -11,12 +11,32 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = Router();
 const prisma = new PrismaClient();
 
+// In-memory rate limit: phone → { usedAt, preview }
+const prospectCache = new Map();
+const RATE_MS = 24 * 60 * 60 * 1000;
+
 function parseJSON(text) {
   const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
   return JSON.parse(cleaned);
 }
 
-// POST /demo/generate — generate personalised content for all 3 channels
+// GET /demo/stats — real numbers for proof ticker (public)
+router.get('/stats', async (req, res, next) => {
+  try {
+    const [bizCount, msgCount, industries] = await Promise.all([
+      prisma.business.count(),
+      prisma.campaignAction.count({ where: { status: 'sent' } }),
+      prisma.business.findMany({ select: { industry: true }, distinct: ['industry'] }),
+    ]);
+    res.json({
+      businesses: bizCount,
+      messagesSent: msgCount,
+      industries: industries.length,
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /demo/generate — internal, authenticated live demo (KBOOS team)
 router.post('/generate', requireAuth, async (req, res, next) => {
   try {
     const { name, company, industry, title, lang, tone, city, currentMethod, challenge, monthlyGoal } = req.body;
@@ -25,7 +45,6 @@ router.post('/generate', requireAuth, async (req, res, next) => {
 
     const client = new Anthropic({ apiKey: key });
     const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
-    const toneLabel = tone || 'Professional';
 
     const methodLabels = {
       referral: 'relies on referrals only — no active outreach',
@@ -41,7 +60,6 @@ router.post('/generate', requireAuth, async (req, res, next) => {
       city ? `Based in: ${city}` : null,
     ].filter(Boolean).join('\n');
 
-    // Load active templates if they exist — use them as base for personalisation
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
     const activeEmail = settings?.promptTemplates?.find(t => t.active);
     const activeWA    = settings?.waTemplates?.find(t => t.active);
@@ -91,19 +109,8 @@ ${prospectSituation}
 
 ${kboosOffer}
 
-COPY RULES — non-negotiable:
-1. Lead with their dream outcome (${monthlyGoal || 'their goal'}) — not KBOOS, not features, not us
-2. Name the bottleneck: their current method is why they're not hitting that outcome yet
-3. Position KBOOS as the bridge that removes the effort, not just another tool
-4. Use their exact industry language — if they sell cars say "sell cars", if they do catering say "catering bookings"
-5. Include one specific proof point (reply rates, similar business results, 48-hour guarantee)
-6. End with the risk reversal — eliminate all fear of trying it
-7. Sound like you already know their market — not a cold pitch
-
 EMAIL INSTRUCTIONS: ${emailInstruction}
-
 WHATSAPP INSTRUCTIONS: ${waInstruction}
-
 VOICE AGENT INSTRUCTIONS: ${voiceInstruction}
 
 Return JSON with exactly these keys:
@@ -121,7 +128,7 @@ Return JSON with exactly these keys:
   } catch (e) { next(e); }
 });
 
-// POST /demo/fire — send to one or all channels directly (no DB lead needed)
+// POST /demo/fire — authenticated, send to one or all channels
 router.post('/fire', requireAuth, async (req, res, next) => {
   try {
     const { name, phone, email, company, channels, content } = req.body;
@@ -143,23 +150,107 @@ router.post('/fire', requireAuth, async (req, res, next) => {
 
     if (channels.includes('voice') && phone) {
       try {
-        const call = await makeCall({
-          phone,
-          leadName: name,
-          bizName: 'KOBIS Berhad',
-          campaignScript: content.voiceScript,
-        });
+        const call = await makeCall({ phone, leadName: name, bizName: 'KOBIS Berhad', campaignScript: content.voiceScript });
         results.voice = { ok: true, callId: call.id };
       } catch (e) { results.voice = { ok: false, error: e.message }; }
     }
 
-    // Log to activity feed
     await prisma.activity.create({
-      data: {
-        color: 'purple',
-        msg: `Live Demo: outreach fired to ${name} at ${company} (${channels.join(', ')})`,
-        tag: 'Demo',
-      },
+      data: { color: 'purple', msg: `Live Demo: outreach fired to ${name} at ${company} (${channels.join(', ')})`, tag: 'Demo' },
+    }).catch(() => {});
+
+    res.json({ ok: true, results });
+  } catch (e) { next(e); }
+});
+
+// ─── Self-serve prospect demo (public, rate-limited) ─────────────────────────
+
+// POST /demo/prospect — generate preview for prospect (no login required)
+router.post('/prospect', async (req, res, next) => {
+  try {
+    const { name, company, industry, phone, email, lang, challenge } = req.body;
+    if (!name || !company || !phone || !email) return res.status(400).json({ error: 'Name, company, phone and email are required.' });
+
+    // Rate limit: 1 demo per phone number per 24 hours
+    const existing = prospectCache.get(phone);
+    if (existing && Date.now() - existing.usedAt < RATE_MS) {
+      return res.status(429).json({ error: 'One demo per phone number per 24 hours. See you tomorrow!', cached: existing.preview });
+    }
+
+    const key = await getApiKey('claude');
+    if (!key) return res.status(400).json({ error: 'System is temporarily unavailable. Please try again later.' });
+
+    const client = new Anthropic({ apiKey: key });
+    const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
+
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1200,
+      system: `You are an elite B2B copywriter for KOBIS, a Malaysian AI outreach automation company. Write short, punchy outreach that makes prospects feel genuinely excited. Return only valid JSON.`,
+      messages: [{
+        role: 'user',
+        content: `Generate personalised outreach for a KBOOS prospect demo. Write as if KOBIS is reaching out to help THEIR business get more clients.
+
+PROSPECT:
+Name: ${name}
+Company: ${company}
+Industry: ${industry || 'Business Services'}
+Language: ${langLabel}
+${challenge ? `Challenge: ${challenge}` : ''}
+
+Write copy that:
+1. Opens with their dream outcome (more clients, more revenue)
+2. Names their pain (referral dependency, manual outreach, inconsistent pipeline)
+3. Shows KBOOS as the bridge — AI handles the outreach, they close the deals
+4. Includes a proof point (23% avg reply rate, 3× industry avg, first replies in 48 hours)
+5. Ends with a no-risk CTA (7-day money-back)
+6. Match their language (${langLabel})
+
+Return JSON:
+{
+  "whatsapp": "WhatsApp message under 80 words — warm, conversational, one soft question at end",
+  "emailSubject": "Email subject under 7 words",
+  "emailBody": "Email body 100-130 words — professional but personal, ends with P.S. line"
+}`
+      }]
+    });
+
+    logClaude({ model: 'claude-haiku-4-5-20251001', inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'prospect_demo' });
+
+    const preview = parseJSON(msg.content[0].text);
+    prospectCache.set(phone, { usedAt: Date.now(), preview });
+
+    res.json({ ok: true, preview });
+  } catch (e) { next(e); }
+});
+
+// POST /demo/prospect/send — actually send WA + email to prospect
+router.post('/prospect/send', async (req, res, next) => {
+  try {
+    const { name, company, phone, email, preview, channels } = req.body;
+    if (!phone || !email || !preview) return res.status(400).json({ error: 'Missing required fields.' });
+
+    const record = prospectCache.get(phone);
+    if (!record) return res.status(400).json({ error: 'Please generate your preview first.' });
+
+    const results = {};
+
+    if (!channels || channels.includes('whatsapp')) {
+      try {
+        await sendMessage({ phone, message: preview.whatsapp });
+        results.whatsapp = { ok: true };
+      } catch (e) { results.whatsapp = { ok: false, error: e.message }; }
+    }
+
+    if (!channels || channels.includes('email')) {
+      try {
+        await sendEmail({ to: email, subject: preview.emailSubject, body: preview.emailBody });
+        results.email = { ok: true };
+      } catch (e) { results.email = { ok: false, error: e.message }; }
+    }
+
+    await prisma.activity.create({
+      data: { color: 'green', msg: `Self-serve demo: ${name} at ${company} — WA + email sent`, tag: 'Demo' },
     }).catch(() => {});
 
     res.json({ ok: true, results });

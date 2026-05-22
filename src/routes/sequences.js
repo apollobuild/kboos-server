@@ -6,6 +6,18 @@ import { generateSequence, regenerateTouchpoint } from '../services/claude.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+// GET /sequences/summary — counts by status for Dashboard
+router.get('/summary', requireAuth, async (req, res, next) => {
+  try {
+    const [active, review, draft] = await Promise.all([
+      prisma.businessSequence.count({ where: { status: 'active' } }),
+      prisma.businessSequence.count({ where: { status: 'review' } }),
+      prisma.businessSequence.count({ where: { status: 'draft' } }),
+    ]);
+    res.json({ active, review, draft, total: active + review + draft });
+  } catch (e) { next(e); }
+});
+
 // GET /sequences/:bizId — get sequence (or empty scaffold)
 router.get('/:bizId', requireAuth, async (req, res, next) => {
   try {
