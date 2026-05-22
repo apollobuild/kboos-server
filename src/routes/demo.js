@@ -168,7 +168,7 @@ router.post('/fire', requireAuth, async (req, res, next) => {
 // POST /demo/prospect — generate preview for prospect (no login required)
 router.post('/prospect', async (req, res, next) => {
   try {
-    const { name, company, industry, phone, email, lang, challenge } = req.body;
+    const { name, company, industry, city, title, phone, email, lang, challenge } = req.body;
     if (!name || !company || !phone || !email) return res.status(400).json({ error: 'Name, company, phone and email are required.' });
 
     // Rate limit: 1 demo per phone number per 24 hours
@@ -193,8 +193,10 @@ router.post('/prospect', async (req, res, next) => {
 
 PROSPECT:
 Name: ${name}
+${title ? `Role: ${title}` : ''}
 Company: ${company}
 Industry: ${industry || 'Business Services'}
+${city ? `City: ${city}, Malaysia` : 'Location: Malaysia'}
 Language: ${langLabel}
 ${challenge ? `Challenge: ${challenge}` : ''}
 
@@ -230,7 +232,8 @@ Return JSON:
       update: { name, company, industry: industry || '', email, lang: lang || 'EN',
         waMsg: preview.whatsapp, emailSubject: preview.emailSubject,
         emailBody: preview.emailBody, voiceScript: preview.voiceScript || '',
-        convoHistory: [], updatedAt: new Date() },
+        convoHistory: [], updatedAt: new Date(),
+      },
     }).catch(() => {});
 
     res.json({ ok: true, preview });
