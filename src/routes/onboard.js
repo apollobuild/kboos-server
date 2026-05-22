@@ -29,7 +29,7 @@ router.post('/generate-token', requireAuth, async (req, res, next) => {
     });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.json({ token: created.token, url: `${frontendUrl}/onboard/${created.token}`, expiresAt });
+    res.json({ token: created.token, url: `${frontendUrl}/Onboarding/${created.token}`, expiresAt });
   } catch (e) { next(e); }
 });
 
@@ -42,7 +42,7 @@ router.get('/link/:bizId', requireAuth, async (req, res, next) => {
     });
     if (!token) return res.json({ url: null });
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.json({ token: token.token, url: `${frontendUrl}/onboard/${token.token}`, expiresAt: token.expiresAt });
+    res.json({ token: token.token, url: `${frontendUrl}/Onboarding/${token.token}`, expiresAt: token.expiresAt });
   } catch (e) { next(e); }
 });
 
