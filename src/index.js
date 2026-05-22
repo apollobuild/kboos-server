@@ -18,6 +18,8 @@ import portalRoutes from './routes/portal.js';
 import demoRoutes from './routes/demo.js';
 import enrichmentRoutes from './routes/enrichment.js';
 import webhookRoutes from './routes/webhooks.js';
+import onboardRoutes from './routes/onboard.js';
+import sequenceRoutes from './routes/sequences.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 
@@ -46,6 +48,8 @@ app.use('/portal', portalRoutes);
 app.use('/demo', demoRoutes);
 app.use('/enrichment', enrichmentRoutes);
 app.use('/webhooks', webhookRoutes);
+app.use('/onboard', onboardRoutes);
+app.use('/sequences', sequenceRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

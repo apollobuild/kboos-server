@@ -244,6 +244,166 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
+export async function generateSequence({ brief, persona, bizName, industry }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+
+  const offer = brief.offer || brief.service || '';
+  const dreamOutcome = brief.dreamOutcome || brief.dream_outcome || '';
+  const audience = brief.audience || brief.bestCustomer || brief.best_customer || '';
+  const proof = brief.proof || brief.results || '';
+  const timeToResult = brief.timeToResult || brief.time_to_result || '';
+  const effortRemoved = brief.effortRemoved || brief.effort_removed || '';
+  const riskReversal = brief.riskReversal || brief.risk_reversal || '';
+  const goals = brief.goals || '';
+  const style = brief.style || brief.communicationStyle || 'professional but warm';
+  const lang = brief.lang || 'EN';
+
+  const personaName = persona.name || 'Amirah';
+  const personaRole = persona.role || 'Business Development Executive';
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: `You are an elite B2B outreach strategist applying Hormozi's $100M Offers, Challenger Sale, and SPIN Selling frameworks. You build complete multi-channel outreach sequences for Malaysian SMEs. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `Build a complete 5-touchpoint outreach sequence for ${bizName}, a ${industry} company.
+
+OFFER DETAILS:
+- Service/Offer: ${offer}
+- Dream Outcome for client: ${dreamOutcome}
+- Best Customer Profile: ${audience}
+- Proof/Results: ${proof}
+- Time to First Result: ${timeToResult}
+- What We Handle (effort removed): ${effortRemoved}
+- Risk Reversal/Guarantee: ${riskReversal}
+- Sales Goals: ${goals}
+- Communication Style: ${style}
+- Language: ${lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English'}
+
+AI PERSONA: ${personaName}, ${personaRole}
+
+SEQUENCE RULES:
+- Touchpoint 1 (Day 1): Cold Email — curiosity hook, no pitch, one soft question
+- Touchpoint 2 (Day 3): WhatsApp — casual intro, reference the email, one question
+- Touchpoint 3 (Day 7): Email Follow-up — add value (insight/stat), re-engage
+- Touchpoint 4 (Day 10): WhatsApp Follow-up — short, direct, last easy ask
+- Touchpoint 5 (Day 14): Voice Call — AI voice agent system prompt for warm follow-up after no WA/email response
+
+For each touchpoint include:
+- Concise, professional copy tailored to the offer
+- Natural Malaysian B2B tone (not American aggressive)
+- {{first_name}}, {{company}}, {{title}}, {{city}} variables where natural
+
+Also generate 5 common objection handlers (short, empathetic, pivoting responses).
+
+Return JSON:
+{
+  "touchpoints": [
+    {
+      "id": "1",
+      "day": 1,
+      "channel": "email",
+      "label": "Cold Email — Day 1",
+      "subject": "email subject line",
+      "body": "full message body",
+      "notes": "why this works — brief internal note"
+    },
+    {
+      "id": "2",
+      "day": 3,
+      "channel": "whatsapp",
+      "label": "WhatsApp Intro — Day 3",
+      "body": "whatsapp message",
+      "notes": "internal note"
+    },
+    {
+      "id": "3",
+      "day": 7,
+      "channel": "email",
+      "label": "Value Follow-up — Day 7",
+      "subject": "follow-up subject",
+      "body": "follow-up email body",
+      "notes": "internal note"
+    },
+    {
+      "id": "4",
+      "day": 10,
+      "channel": "whatsapp",
+      "label": "Final WA Touch — Day 10",
+      "body": "final whatsapp message",
+      "notes": "internal note"
+    },
+    {
+      "id": "5",
+      "day": 14,
+      "channel": "voice",
+      "label": "Voice Agent — Day 14",
+      "body": "full AI voice agent system prompt (300-400 words behavioral instructions)",
+      "notes": "internal note"
+    }
+  ],
+  "objections": [
+    { "id": "o1", "trigger": "Not interested", "response": "..." },
+    { "id": "o2", "trigger": "Too busy right now", "response": "..." },
+    { "id": "o3", "trigger": "We already have someone", "response": "..." },
+    { "id": "o4", "trigger": "Send me more info", "response": "..." },
+    { "id": "o5", "trigger": "Too expensive", "response": "..." }
+  ]
+}`
+    }]
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_sequence' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function regenerateTouchpoint({ brief, persona, bizName, touchpoint }) {
+  const client = await getClient();
+  const model = 'claude-haiku-4-5-20251001';
+
+  const offer = brief.offer || brief.service || '';
+  const dreamOutcome = brief.dreamOutcome || '';
+  const audience = brief.bestCustomer || '';
+  const style = brief.style || 'professional but warm';
+  const lang = brief.lang || 'EN';
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 1024,
+    system: `You are a B2B copywriter for Malaysian SMEs. Rewrite outreach copy for the given channel. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `Rewrite this ${touchpoint.channel} touchpoint for ${bizName}.
+
+Offer: ${offer}
+Dream Outcome: ${dreamOutcome}
+Audience: ${audience}
+Style: ${style}
+Language: ${lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English'}
+
+Current touchpoint:
+Label: ${touchpoint.label}
+Day: ${touchpoint.day}
+${touchpoint.subject ? `Subject: ${touchpoint.subject}` : ''}
+Body: ${touchpoint.body}
+
+Write a fresh version — different angle, same goal. Keep {{variables}} intact.
+
+Return JSON:
+{
+  ${touchpoint.channel === 'email' ? '"subject": "new subject line",' : ''}
+  "body": "new message body",
+  "notes": "what's different about this version"
+}`
+    }]
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'regen_touchpoint' });
+  return parseJSON(msg.content[0].text);
+}
+
 export async function testConnection(apiKey) {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({

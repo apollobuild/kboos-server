@@ -182,3 +182,26 @@ model WalletTransaction {
   status      String   @default("pending")
   createdAt   DateTime @default(now())
 }
+
+model BusinessSequence {
+  id          String   @id @default(cuid())
+  bizId       String   @unique
+  brief       Json     @default("{}")
+  persona     Json     @default("{}")
+  touchpoints Json     @default("[]")
+  objections  Json     @default("[]")
+  status      String   @default("draft")
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+model OnboardToken {
+  id        String    @id @default(cuid())
+  bizId     String
+  bizName   String    @default("")
+  token     String    @unique @default(cuid())
+  used      Boolean   @default(false)
+  usedAt    DateTime?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+}
