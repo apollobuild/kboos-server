@@ -185,7 +185,7 @@ router.post('/prospect', async (req, res, next) => {
 
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1200,
+      max_tokens: 1600,
       system: `You are an elite B2B copywriter for KOBIS, a Malaysian AI outreach automation company. Write short, punchy outreach that makes prospects feel genuinely excited. Return only valid JSON.`,
       messages: [{
         role: 'user',
@@ -210,7 +210,8 @@ Return JSON:
 {
   "whatsapp": "WhatsApp message under 80 words — warm, conversational, one soft question at end",
   "emailSubject": "Email subject under 7 words",
-  "emailBody": "Email body 100-130 words — professional but personal, ends with P.S. line"
+  "emailBody": "Email body 100-130 words — professional but personal, ends with P.S. line",
+  "voiceScript": "Full AI voice agent system prompt 150-200 words — agent introduces as KOBIS AI, presents the KBOOS offer for their specific industry, handles 3 common objections (busy/not interested/too expensive), goal is to book a 15-min discovery call, ends by offering to connect to a human specialist"
 }`
       }]
     });
@@ -220,11 +221,23 @@ Return JSON:
     const preview = parseJSON(msg.content[0].text);
     prospectCache.set(phone, { usedAt: Date.now(), preview });
 
+    // Save prospect to DB for AI reply bot tracking
+    await prisma.demoProspect.upsert({
+      where: { phone },
+      create: { name, company, industry: industry || '', phone, email, lang: lang || 'EN',
+        waMsg: preview.whatsapp, emailSubject: preview.emailSubject,
+        emailBody: preview.emailBody, voiceScript: preview.voiceScript || '' },
+      update: { name, company, industry: industry || '', email, lang: lang || 'EN',
+        waMsg: preview.whatsapp, emailSubject: preview.emailSubject,
+        emailBody: preview.emailBody, voiceScript: preview.voiceScript || '',
+        convoHistory: [], updatedAt: new Date() },
+    }).catch(() => {});
+
     res.json({ ok: true, preview });
   } catch (e) { next(e); }
 });
 
-// POST /demo/prospect/send — actually send WA + email to prospect
+// POST /demo/prospect/send — send WA + email + AI voice call to prospect
 router.post('/prospect/send', async (req, res, next) => {
   try {
     const { name, company, phone, email, preview, channels } = req.body;
@@ -249,8 +262,17 @@ router.post('/prospect/send', async (req, res, next) => {
       } catch (e) { results.email = { ok: false, error: e.message }; }
     }
 
+    // AI voice call — fires after WA + email so prospect sees messages first
+    if (!channels || channels.includes('voice')) {
+      try {
+        const script = preview.voiceScript || `You are a friendly AI representative for KOBIS, a Malaysian AI outreach company. Introduce yourself, mention you just sent ${name} a WhatsApp and email about helping ${company} get more clients, and aim to book a 15-minute discovery call.`;
+        const call = await makeCall({ phone, leadName: name, bizName: 'KOBIS Berhad', campaignScript: script });
+        results.voice = { ok: true, callId: call?.id };
+      } catch (e) { results.voice = { ok: false, error: e.message }; }
+    }
+
     await prisma.activity.create({
-      data: { color: 'green', msg: `Self-serve demo: ${name} at ${company} — WA + email sent`, tag: 'Demo' },
+      data: { color: 'green', msg: `Self-serve demo: ${name} at ${company} — WA + email + AI call fired`, tag: 'Demo' },
     }).catch(() => {});
 
     res.json({ ok: true, results });
