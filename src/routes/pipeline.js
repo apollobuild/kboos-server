@@ -23,6 +23,113 @@ router.get('/:campaignId', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /pipeline/:campaignId/scrape — trigger Google Maps / Apollo scrape via queue
+router.post('/:campaignId/scrape', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const { mode = 'gmaps', keyword, city, limit = 50, jobTitles = [], seniority = [] } = req.body;
+
+    if (!city) return res.status(400).json({ error: 'city is required' });
+    if (mode !== 'apollo' && !keyword) return res.status(400).json({ error: 'keyword is required for Google Maps mode' });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    await prisma.campaignPipeline.upsert({
+      where: { campaignId },
+      update: { stage: 'scraping', scrapeTotal: limit, scrapeComplete: 0, lastError: null },
+      create: { campaignId, stage: 'scraping', scrapeTotal: limit, scrapeComplete: 0 },
+    });
+
+    await enqueue('lead-scrape', { campaignId, mode, keyword, city, limit, jobTitles, seniority }, { priority: 1 });
+    res.json({ ok: true, stage: 'scraping' });
+  } catch (e) { next(e); }
+});
+
+// POST /pipeline/:campaignId/upload-csv — import leads from CSV text
+router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const { csvText, fieldMap = {} } = req.body;
+
+    if (!csvText) return res.status(400).json({ error: 'csvText is required' });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const Papa = (await import('papaparse')).default;
+    const parsed = Papa.parse(csvText.trim(), { header: true, skipEmptyLines: true });
+    const rows = parsed.data;
+    if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
+
+    const COMMON = {
+      name: ['Name', 'name', 'Full Name', 'Contact Name', 'Business Name', 'contact_name'],
+      company: ['Company', 'company', 'Organization', 'Business', 'Company Name', 'organization_name'],
+      title: ['Title', 'title', 'Job Title', 'Position', 'Role', 'job_title'],
+      phone: ['Phone', 'phone', 'Phone Number', 'Mobile', 'Tel', 'WhatsApp', 'phone_number'],
+      email: ['Email', 'email', 'Email Address', 'E-mail', 'email_address'],
+      website: ['Website', 'website', 'URL', 'Web', 'site'],
+      address: ['Address', 'address', 'Location', 'City', 'full_address'],
+    };
+
+    function getField(row, fieldName) {
+      if (fieldMap[fieldName] && row[fieldMap[fieldName]] !== undefined) return row[fieldMap[fieldName]] || '';
+      for (const key of (COMMON[fieldName] || [])) {
+        if (row[key] !== undefined) return row[key] || '';
+      }
+      return '';
+    }
+
+    const existing = await prisma.lead.findMany({ where: { campaignId }, select: { phone: true, email: true } });
+    const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
+    const existingEmails = new Set(existing.map(l => l.email).filter(Boolean));
+
+    const toInsert = [];
+    for (const row of rows) {
+      const name = getField(row, 'name');
+      const company = getField(row, 'company');
+      const phone = getField(row, 'phone').replace(/[\s\-()]/g, '');
+      const email = getField(row, 'email').toLowerCase().trim();
+      if (!name && !company) continue;
+      if (phone && existingPhones.has(phone)) continue;
+      if (email && existingEmails.has(email)) continue;
+      const channels = [];
+      if (phone) channels.push('whatsapp');
+      if (email) channels.push('email');
+      toInsert.push({
+        campaignId, bizId: campaign.bizId,
+        name: name || company || 'Unknown',
+        company: company || '',
+        title: getField(row, 'title'),
+        phone, email,
+        website: getField(row, 'website'),
+        address: getField(row, 'address'),
+        score: 0, status: 'new', lang: 'EN',
+        channels: channels.length ? channels : ['email'],
+        last: 'just now',
+      });
+    }
+
+    if (!toInsert.length) return res.json({ count: 0, total: existing.length, msg: 'No new leads to import' });
+
+    await prisma.lead.createMany({ data: toInsert });
+    const newTotal = await prisma.lead.count({ where: { campaignId } });
+    await prisma.campaign.update({ where: { id: campaignId }, data: { leads: newTotal } });
+
+    await prisma.campaignPipeline.upsert({
+      where: { campaignId },
+      update: { stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date(), lastError: null },
+      create: { campaignId, stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date() },
+    });
+
+    await prisma.activity.create({
+      data: { color: 'blue', msg: `Imported ${toInsert.length} leads from CSV for ${campaign.name}`, tag: 'Import' },
+    }).catch(() => {});
+
+    res.json({ count: toInsert.length, total: newTotal });
+  } catch (e) { next(e); }
+});
+
 // POST /pipeline/:campaignId/validate — trigger lead validation
 router.post('/:campaignId/validate', requireAuth, async (req, res, next) => {
   try {
