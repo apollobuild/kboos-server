@@ -65,6 +65,9 @@ model Campaign {
   dailyLimit   Int       @default(200)
   driveSheetId String?
   driveSheetUrl String?
+  dailyLimitEmail  Int       @default(200)
+  dailyLimitWa     Int       @default(200)
+  dailyLimitVoice  Int       @default(20)
   createdAt DateTime @default(now())
 }
 
@@ -95,6 +98,13 @@ model Lead {
   aiPriorityNote   String?
   aiPrioritizedAt  DateTime?
   aiNextAction     String?
+  tier              String?
+  validationScore   Int?
+  personalized      Boolean   @default(false)
+  personalizedAt    DateTime?
+  meetingBooked     Boolean   @default(false)
+  dealValue         Float?
+  dealClosedAt      DateTime?
   createdAt        DateTime  @default(now())
 }
 
@@ -165,6 +175,8 @@ model CampaignAction {
   sentAt     DateTime
   openedAt   DateTime?
   errorMsg   String?
+  jobId       String?
+  retryCount  Int      @default(0)
   createdAt  DateTime @default(now())
 
   @@index([campaignId, stepDay, type])
@@ -239,4 +251,106 @@ model DemoProspect {
   convoHistory  Json     @default("[]")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model CampaignPipeline {
+  id                  Int       @id @default(autoincrement())
+  campaignId          Int       @unique
+  stage               String    @default("draft")
+  scrapeTotal         Int?
+  scrapeComplete      Int?
+  enrichTotal         Int?
+  enrichComplete      Int?
+  personalizeTotal    Int?
+  personalizeComplete Int?
+  eligibleEmail       Int?
+  eligibleWa          Int?
+  eligibleVoice       Int?
+  ineligibleCount     Int?
+  tierA               Int?
+  tierB               Int?
+  tierC               Int?
+  approvedTiers       String[]  @default([])
+  scrapedAt           DateTime?
+  validatedAt         DateTime?
+  enrichedAt          DateTime?
+  assetsReadyAt       DateTime?
+  personalizedAt      DateTime?
+  launchedAt          DateTime?
+  lastError           String?
+  updatedAt           DateTime  @updatedAt
+}
+
+model CampaignAsset {
+  id          Int      @id @default(autoincrement())
+  campaignId  Int
+  assetType   String
+  channel     String
+  label       String
+  subject     String?
+  body        String
+  notes       String?
+  editedBody  String?
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([campaignId])
+}
+
+model LeadScore {
+  id            Int      @id @default(autoincrement())
+  leadId        Int      @unique
+  tier          String
+  qualityScore  Int
+  signals       String[]
+  hasWebsite    Boolean  @default(false)
+  hasPhone      Boolean  @default(false)
+  hasEmail      Boolean  @default(false)
+  categoryMatch Boolean  @default(false)
+  ratingOk      Boolean  @default(false)
+  scoredAt      DateTime @default(now())
+}
+
+model LeadPersonalization {
+  id            Int      @id @default(autoincrement())
+  leadId        Int      @unique
+  campaignId    Int
+  openingLine   String
+  variables     Json     @default("{}")
+  generatedAt   DateTime @default(now())
+
+  @@index([campaignId])
+}
+
+model LeadEligibility {
+  id              Int      @id @default(autoincrement())
+  leadId          Int
+  campaignId      Int
+  emailEligible   Boolean  @default(false)
+  waEligible      Boolean  @default(false)
+  voiceEligible   Boolean  @default(false)
+  emailReason     String?
+  waReason        String?
+  voiceReason     String?
+  checkedAt       DateTime @default(now())
+
+  @@unique([leadId, campaignId])
+}
+
+model MeetingLog {
+  id            Int      @id @default(autoincrement())
+  leadId        Int
+  campaignId    Int
+  bizId         String
+  meetingDate   DateTime?
+  meetingType   String    @default("discovery")
+  outcome       String?
+  notes         String    @default("")
+  revenue       Float?
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([campaignId])
+  @@index([bizId])
 }

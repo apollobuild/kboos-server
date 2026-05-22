@@ -1,0 +1,42 @@
+import { PrismaClient } from '@prisma/client';
+import { makeCall } from '../services/vapi.js';
+import { injectPersonalization } from '../services/leadScoring.js';
+
+const prisma = new PrismaClient();
+
+export async function handleOutreachVoice(job) {
+  const { leadId, campaignId, assetType, stepDay, actionId } = job.data;
+
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead || ['unsubscribed', 'bounced'].includes(lead.status)) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'Lead unsubscribed/bounced' } });
+    return;
+  }
+
+  const elig = await prisma.leadEligibility.findUnique({ where: { leadId_campaignId: { leadId, campaignId } } });
+  if (elig && !elig.voiceEligible) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: elig.voiceReason } });
+    return;
+  }
+  if (!lead.phone) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'failed', errorMsg: 'No phone' } });
+    return;
+  }
+
+  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+  const config = campaign.config || {};
+
+  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'voice', assetType: 'voice_opening' } });
+  const personalization = await prisma.leadPersonalization.findUnique({ where: { leadId } });
+
+  const voiceScript = asset ? injectPersonalization(asset.editedBody || asset.body, lead, personalization) : (config.voiceScript || '');
+
+  try {
+    await makeCall({ phone: lead.phone, leadName: lead.name, bizName: campaign.bizName, campaignScript: voiceScript });
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'sent', jobId: job.id } });
+    await prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date(), status: ['new','scraped','personalizing'].includes(lead.status) ? 'called' : lead.status } });
+  } catch (err) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'failed', errorMsg: err.message, retryCount: { increment: 1 } } });
+    throw err;
+  }
+}

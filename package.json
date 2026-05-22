@@ -19,11 +19,12 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2",
     "googleapis": "^144.0.0",
+    "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "papaparse": "^5.4.1",
+    "pg-boss": "^12.18.2",
     "prisma": "^6.0.0"
   }
 }

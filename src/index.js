@@ -20,9 +20,13 @@ import enrichmentRoutes from './routes/enrichment.js';
 import webhookRoutes from './routes/webhooks.js';
 import onboardRoutes from './routes/onboard.js';
 import sequenceRoutes from './routes/sequences.js';
+import pipelineRoutes from './routes/pipeline.js';
+import meetingsRoutes from './routes/meetings.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
+import { startQueue } from './services/queue.js';
+import { startWorkers } from './workers/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -51,14 +55,23 @@ app.use('/enrichment', enrichmentRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/onboard', onboardRoutes);
 app.use('/sequences', sequenceRoutes);
+app.use('/pipeline', pipelineRoutes);
+app.use('/meetings', meetingsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`KBOOS server running on port ${PORT}`);
+  try {
+    await startQueue();
+    await startWorkers();
+    console.log('[Queue] pg-boss workers started');
+  } catch (err) {
+    console.error('[Queue] Failed to start workers:', err.message);
+  }
   // Campaign execution engine — every hour on the hour
   cron.schedule('0 * * * *', () => {
     console.log('[Engine] Hourly tick');

@@ -570,6 +570,116 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
+export async function generateCampaignAssets({ bizName, industry, offer, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'] }) {
+  const client = await getClient();
+  const model = 'claude-opus-4-7';
+  const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
+  const hasEmail = channels.includes('email');
+  const hasWa = channels.includes('wa');
+  const hasVoice = channels.includes('call') || channels.includes('voice');
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: `You are an elite B2B outreach copywriter for Malaysian SMEs applying Hormozi's $100M Offers framework. Generate campaign assets that will be reused across all leads — no lead-specific details, only {{variables}} for personalisation. Language: ${langLabel}. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `Generate a full suite of outreach assets for this campaign.
+
+BUSINESS: ${bizName}
+INDUSTRY: ${industry}
+OFFER: ${offer}
+DREAM OUTCOME: ${dreamOutcome}
+TARGET AUDIENCE: ${targetAudience}
+TONE: ${tone}
+CHANNELS: ${channels.join(', ')}
+
+RULES:
+- Use {{opening_line}}, {{first_name}}, {{company}}, {{title}}, {{city}}, {{industry}} variables throughout
+- {{opening_line}} is a hyper-personalised AI-generated first sentence injected per lead
+- Subject lines: under 7 words, curiosity/stat/question formula, never start with "I" or company name
+- Email bodies: under 130 words, open with THEIR situation not yours, one CTA, end with P.S. line
+- WA messages: under 80 words, casual but professional, ends with one question
+- Voice scripts: 300-400 word behavioral system prompt for an AI voice agent
+
+Generate:
+${hasEmail ? '- 4 email variants (different angles: curiosity, social proof, direct question, future pacing)' : ''}
+${hasWa ? '- 3 WhatsApp variants (different hooks: benefit, problem, results)' : ''}
+${hasVoice ? '- 2 voice variants (warm intro, direct opener)' : ''}
+
+Return JSON:
+{
+  ${hasEmail ? `"emails": [
+    {"assetType":"email_1","label":"Curiosity Hook — Email 1","subject":"...","body":"...","notes":"what makes this work"},
+    {"assetType":"email_2","label":"Social Proof — Email 2","subject":"...","body":"...","notes":"..."},
+    {"assetType":"email_3","label":"Direct Question — Email 3","subject":"...","body":"...","notes":"..."},
+    {"assetType":"email_4","label":"Future Pacing — Email 4","subject":"...","body":"...","notes":"..."}
+  ],` : '"emails": [],'}
+  ${hasWa ? `"whatsapps": [
+    {"assetType":"wa_1","label":"Benefit Hook — WA 1","body":"...","notes":"..."},
+    {"assetType":"wa_2","label":"Problem Angle — WA 2","body":"...","notes":"..."},
+    {"assetType":"wa_3","label":"Results Lead — WA 3","body":"...","notes":"..."}
+  ],` : '"whatsapps": [],'}
+  ${hasVoice ? `"voice": {
+    "warm": {"assetType":"voice_warm","label":"Warm Intro Script","body":"full 300-400 word voice agent system prompt","notes":"..."},
+    "direct": {"assetType":"voice_direct","label":"Direct Opener Script","body":"full system prompt","notes":"..."}
+  }` : '"voice": null'}
+}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign_assets' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targetAudience, batch }) {
+  const client = await getClient();
+  const model = 'claude-haiku-4-5-20251001';
+
+  const leadsText = batch.map(l =>
+    `ID:${l.id} | ${l.name} | ${l.company} | ${l.category || 'Unknown'} | ${l.city || 'Malaysia'} | Rating:${l.rating || 0}`
+  ).join('\n');
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: `You are a hyper-personalisation engine for B2B outreach in Malaysia. Generate unique, specific opening lines for each lead. Each line must feel like it was written by a human who researched this specific company. Never generic. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `CONTEXT:
+Sending company: ${bizName}
+Offer: ${offer}
+Dream outcome we deliver: ${dreamOutcome}
+Target audience: ${targetAudience}
+
+LEADS (ID | Name | Company | Category | City | Rating):
+${leadsText}
+
+For each lead write:
+- openingLine: 1-2 sentences that feel personally researched. Reference their category/city/business type naturally. Must lead naturally into the offer.
+- variables: any extra personalisation tokens beyond the standard ones { first_name, company, title, city }
+
+Rules:
+- Never start with "I" — open with THEM
+- Never use "I hope this email finds you well" or any banned phrases
+- Malaysian B2B context: can reference local challenges (talent, logistics, digital transformation)
+- Opening lines should make the reader feel "this person knows my business"
+
+Return JSON:
+{
+  "personalized": [
+    {
+      "leadId": 123,
+      "openingLine": "Running a logistics outfit in Shah Alam with GST pressure and thin margins — sounds familiar.",
+      "variables": { "industry_pain": "logistics margins" }
+    }
+  ]
+}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'batch_personalize' });
+  return parseJSON(msg.content[0].text);
+}
+
 export async function testConnection(apiKey) {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
