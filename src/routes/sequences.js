@@ -168,4 +168,15 @@ router.patch('/:bizId/objections', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// DELETE /sequences/:bizId — permanently delete sequence
+router.delete('/:bizId', requireAuth, async (req, res, next) => {
+  try {
+    await prisma.businessSequence.delete({ where: { bizId: req.params.bizId } });
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'P2025') return res.status(404).json({ error: 'Sequence not found' });
+    next(e);
+  }
+});
+
 export default router;
