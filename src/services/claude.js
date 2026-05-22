@@ -404,6 +404,172 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
+export async function generateCampaignFromGoal({ bizId, goal, brief, industry }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 1500,
+    system: `You are an expert B2B campaign strategist for Malaysian SMEs. Given a business brief and a plain-English campaign goal, generate a complete campaign configuration. Malaysian market context: WhatsApp is highly effective for SME owners, email works for corporate buyers, voice is best for high-ticket deals. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `BUSINESS BRIEF:
+Name: ${brief.name || ''}
+Industry: ${industry || brief.industry || ''}
+Offer: ${brief.offer || brief.service || ''}
+Dream Outcome: ${brief.dreamOutcome || ''}
+Best Customer: ${brief.audience || brief.bestCustomer || ''}
+Proof: ${brief.proof || ''}
+Style: ${brief.style || 'professional'}
+Language: ${brief.lang || 'EN'}
+
+CAMPAIGN GOAL: "${goal}"
+
+Generate the campaign config. Rules:
+- channel: "wa" for SME/local targets, "wa_email" for corporate B2B, "full" for high-value deals >RM10k
+- Derive Google Maps keyword from the goal (specific business type)
+- Apollo job titles: 3-5 titles matching ideal buyer
+- Sequence timing: Day 1 first touch, Day 3 follow-up alternate channel, Day 7 value email, Day 10 WA, Day 14 voice (only if full channel)
+- Lead count: parse from goal if given, otherwise 200
+- Email prompt: 2-sentence style brief for the email generator
+- reasoning: 1-2 sentences explaining channel + timing choices
+
+Return JSON:
+{
+  "name": "campaign name",
+  "channel": "wa|wa_email|full",
+  "channels": ["wa"] or ["wa","email"] or ["wa","email","call"],
+  "sequence": [{"day":1,"type":"email","skipIfReplied":true}],
+  "config": {
+    "emailPrompt": "...",
+    "waMessage": "opening WA message draft under 80 words with {{first_name}} and {{company}} variables",
+    "voiceScript": "30-second voice agent opening if voice selected, else empty",
+    "google_maps": {"keyword":"...","city":"...","limit":150},
+    "apollo": {"job_titles":["..."],"industries":["..."],"limit":150}
+  },
+  "total": 200,
+  "reasoning": "..."
+}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function analyzeCampaignPerformance({ campaign, stats, brief }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 800,
+    system: `You are a campaign performance analyst for B2B outreach in Malaysia. Analyse stats and return a grade, one key insight, and 1-3 concrete actions. Be direct and specific. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `CAMPAIGN: "${campaign.name}"
+INDUSTRY: ${brief?.industry || campaign.bizName}
+CHANNELS: ${campaign.channels?.join(', ') || 'unknown'}
+DAYS RUNNING: ${stats.daysRunning}
+
+STATS:
+- Total leads: ${stats.totalLeads}
+- Messages sent: ${stats.totalSent}
+- Email open rate: ${stats.openRate}% (Malaysian B2B avg: 22%)
+- WA response rate: ${stats.waResponseRate}% (benchmark: 8-15%)
+- Hot leads: ${stats.hotCount}
+- Email bounces: ${stats.emailBounces}
+
+Return JSON:
+{
+  "grade": "A|B+|B|C|D",
+  "gradeColor": "green|amber|red",
+  "topInsight": "one specific observation",
+  "actions": [
+    {
+      "priority": 1,
+      "label": "short label",
+      "detail": "specific actionable advice",
+      "actionType": "update_config|add_leads|pause_channel|suggest_only"
+    }
+  ]
+}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'campaign_performance' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function prioritizeLeads({ leads, campaign, brief }) {
+  const client = await getClient();
+  const model = 'claude-haiku-4-5-20251001';
+  const leadsSnapshot = leads.map(l => ({
+    id: l.id,
+    name: l.name,
+    company: l.company,
+    title: l.title,
+    status: l.status,
+    enriched: l.enriched,
+    emailOpens: l._emailOpens || 0,
+    waReplies: l._waReplies || 0,
+    daysSinceContact: l._daysSinceContact || 99,
+  }));
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 2000,
+    system: `You are a B2B lead prioritization engine. Score leads 0-100 by conversion likelihood. Higher = more likely to convert now. Base on: recency, engagement depth (replied > opened > nothing), title seniority, enrichment. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `CAMPAIGN: "${campaign.name}"
+OFFER: ${brief?.offer || brief?.service || ''}
+TARGET: ${brief?.audience || brief?.bestCustomer || ''}
+
+LEADS:
+${JSON.stringify(leadsSnapshot)}
+
+For each lead return: priorityScore(0-100), signals(1-3 strings), suggestedAction(1 sentence), prewrittenMessage(WA under 60 words using {{first_name}}).
+
+Return JSON: {"ranked":[{"leadId":123,"priorityScore":85,"signals":["..."],"suggestedAction":"...","prewrittenMessage":"..."}]}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'prioritize_leads' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function generateSmartFollowup({ lead, campaign, brief, history, channel }) {
+  const client = await getClient();
+  const model = 'claude-haiku-4-5-20251001';
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 400,
+    system: `You are a B2B outreach specialist for Malaysian SMEs. Generate the optimal next message for a lead based on their engagement history. Be warm, specific, brief. Return only valid JSON.`,
+    messages: [{
+      role: 'user',
+      content: `LEAD: ${lead.name} at ${lead.company} (${lead.title})
+STATUS: ${lead.status}
+LANGUAGE: ${lead.lang || 'EN'}
+
+OUTREACH HISTORY:
+${history || 'No prior contact'}
+
+OFFER: ${brief?.offer || brief?.service || ''}
+PROOF: ${brief?.proof || ''}
+
+CHANNEL: ${channel || 'pick best based on history'}
+
+Rules: If they opened email but no reply, reference it. If WA unread after 2 touches, change angle entirely. Under 80 words for WA, 150 for email.
+
+Return JSON:
+{
+  "channel": "wa|email|call",
+  "message": "message text with {{first_name}} variable",
+  "reasoning": "why this approach",
+  "suggestedSendAt": "morning or afternoon"
+}`
+    }]
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_followup' });
+  return parseJSON(msg.content[0].text);
+}
+
 export async function testConnection(apiKey) {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({

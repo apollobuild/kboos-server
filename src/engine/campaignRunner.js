@@ -57,8 +57,22 @@ async function dispatchAction(type, lead, campaign) {
   }
 }
 
+function isWithinSendWindow(now) {
+  // 9am–6pm Malaysia time (UTC+8)
+  const klOffset = 8 * 60;
+  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const klMinutes = (utcMinutes + klOffset) % (24 * 60);
+  return klMinutes >= 9 * 60 && klMinutes < 18 * 60;
+}
+
 export async function runTick() {
   const now = new Date();
+
+  if (!isWithinSendWindow(now)) {
+    console.log('[Engine] Outside send window (9am–6pm KL). Skipping tick.');
+    return;
+  }
+
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
 
@@ -85,9 +99,16 @@ export async function runTick() {
         continue;
       }
 
+      const config = campaign.config || {};
+      const pausedChannels = Array.isArray(config.pausedChannels) ? config.pausedChannels : [];
+
       for (const step of sequence) {
         if (step.day > daysSinceStart) continue;
         if (budget <= 0) break;
+        if (pausedChannels.includes(step.type)) {
+          console.log(`[Engine] Campaign ${campaign.id} — channel "${step.type}" paused, skipping`);
+          continue;
+        }
 
         const actioned = await prisma.campaignAction.findMany({
           where: { campaignId: campaign.id, stepDay: step.day, type: step.type },

@@ -91,6 +91,10 @@ model Lead {
   enrichedAt       DateTime?
   enrichmentNote   String?
   note             String    @default("")
+  aiPriorityScore  Int?
+  aiPriorityNote   String?
+  aiPrioritizedAt  DateTime?
+  aiNextAction     String?
   createdAt        DateTime  @default(now())
 }
 
@@ -204,6 +208,20 @@ model OnboardToken {
   usedAt    DateTime?
   expiresAt DateTime?
   createdAt DateTime  @default(now())
+}
+
+model AiInsightCache {
+  id          Int      @id @default(autoincrement())
+  entityType  String
+  entityId    String
+  insightType String
+  result      Json
+  inputHash   String
+  computedAt  DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([entityType, entityId, insightType])
+  @@index([expiresAt])
 }
 
 model DemoProspect {

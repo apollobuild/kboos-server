@@ -22,6 +22,7 @@ import onboardRoutes from './routes/onboard.js';
 import sequenceRoutes from './routes/sequences.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
+import { clearExpired } from './services/aiCache.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -65,4 +66,8 @@ app.listen(PORT, () => {
   });
   // Startup tick after 10s (catch up on any missed hours)
   setTimeout(() => runTick().catch(err => console.error('[Engine] Startup tick error:', err.message)), 10000);
+  // Nightly cache cleanup at 2am KL (6pm UTC)
+  cron.schedule('0 18 * * *', () => {
+    clearExpired().then(n => console.log(`[Cache] Cleared ${n} expired AI insight entries`)).catch(() => {});
+  });
 });
