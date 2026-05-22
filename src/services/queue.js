@@ -1,12 +1,10 @@
-import PgBoss from 'pg-boss';
+import { PgBoss } from 'pg-boss';
 
 let boss = null;
 
 export async function startQueue() {
   boss = new PgBoss({
     connectionString: process.env.DATABASE_URL,
-    noSupervisor: false,
-    monitorStateIntervalSeconds: 30,
     deleteAfterDays: 7,
     archiveCompletedAfterSeconds: 3600,
   });
@@ -41,7 +39,10 @@ export async function getQueueStats() {
   const queues = ['lead-validation','lead-enrichment','ai-asset-gen','lead-personalize','outreach-email','outreach-wa','outreach-voice','channel-eligibility'];
   const stats = {};
   for (const name of queues) {
-    try { stats[name] = await q.getQueueSize(name); } catch { stats[name] = 0; }
+    try {
+      const qs = await q.getQueueStats(name);
+      stats[name] = qs?.size ?? 0;
+    } catch { stats[name] = 0; }
   }
   return stats;
 }
