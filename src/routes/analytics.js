@@ -61,4 +61,20 @@ router.post('/campaign/:id/analyze', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /analytics/overview — dashboard summary
+router.get('/overview', requireAuth, async (req, res, next) => {
+  try {
+    const [activeCampaigns, totalLeads, meetingsBooked, emailActions, waActions, voiceActions, recentActivity] = await Promise.all([
+      prisma.campaign.count({ where: { status: 'active' } }),
+      prisma.lead.count(),
+      prisma.meetingLog.count(),
+      prisma.campaignAction.count({ where: { type: 'email' } }),
+      prisma.campaignAction.count({ where: { type: 'wa' } }),
+      prisma.campaignAction.count({ where: { type: 'voice' } }),
+      prisma.activity.findMany({ orderBy: { createdAt: 'desc' }, take: 6 }),
+    ]);
+    res.json({ activeCampaigns, totalLeads, meetingsBooked, emailActions, waActions, voiceActions, recentActivity });
+  } catch (e) { next(e); }
+});
+
 export default router;
