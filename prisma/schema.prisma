@@ -69,6 +69,14 @@ model Campaign {
   dailyLimitWa     Int       @default(200)
   dailyLimitVoice  Int       @default(20)
   createdAt DateTime @default(now())
+
+  // V2 Revenue Engine fields
+  offer              String  @default("")
+  goal               String  @default("")
+  targetAudience     String  @default("")
+  personalizationLevel Int   @default(2)
+  leadSource         String  @default("gmaps")
+  channelStrategy    String?
 }
 
 model Lead {
@@ -106,6 +114,20 @@ model Lead {
   dealValue         Float?
   dealClosedAt      DateTime?
   createdAt        DateTime  @default(now())
+
+  // V2 Revenue Engine fields
+  rawQualityScore    Int?
+  aiScore            Int?
+  aiScoreReason      String?
+  enrichmentConfidence Float?
+  waEligible         Boolean  @default(false)
+  emailEligible      Boolean  @default(false)
+  voiceEligible      Boolean  @default(false)
+  eligibilityChecked Boolean  @default(false)
+  openingLine        String?
+  category           String   @default("")
+  rating             Float?
+  reviewCount        Int?
 }
 
 model Reply {
@@ -279,6 +301,29 @@ model CampaignPipeline {
   launchedAt          DateTime?
   lastError           String?
   updatedAt           DateTime  @updatedAt
+
+  // V2 Revenue Engine fields
+  qualifyTotal        Int?
+  qualifyComplete     Int?
+  aiScoreTotal        Int?
+  aiScoreComplete     Int?
+  channelConfig       Json?
+  deliverabilityScore Int?
+  deliverabilityDetail Json?
+  channelsConfiguredAt DateTime?
+  aiScoredAt          DateTime?
+  qualifiedAt         DateTime?
+}
+
+model CampaignOptimization {
+  id           Int      @id @default(autoincrement())
+  campaignId   Int
+  analyzedAt   DateTime @default(now())
+  metrics      Json     @default("{}")
+  suggestions  Json     @default("[]")
+  applied      Boolean  @default(false)
+
+  @@index([campaignId])
 }
 
 model CampaignAsset {

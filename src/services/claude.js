@@ -570,7 +570,7 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateCampaignAssets({ bizName, industry, offer, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'] }) {
+export async function generateCampaignAssets({ bizName, industry, offer, goal, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'], sampleLeads }) {
   const client = await getClient();
   const model = 'claude-opus-4-7';
   const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
@@ -589,10 +589,11 @@ export async function generateCampaignAssets({ bizName, industry, offer, dreamOu
 BUSINESS: ${bizName}
 INDUSTRY: ${industry}
 OFFER: ${offer}
+GOAL: ${goal || ''}
 DREAM OUTCOME: ${dreamOutcome}
 TARGET AUDIENCE: ${targetAudience}
 TONE: ${tone}
-CHANNELS: ${channels.join(', ')}
+CHANNELS: ${channels.join(', ')}${sampleLeads?.length ? `\nSAMPLE LEADS (representative of this campaign's audience):\n${sampleLeads.slice(0,5).map(l => `- ${l.company} (${l.category||l.industry||'Unknown'}) in ${l.address||'Malaysia'}`).join('\n')}` : ''}
 
 RULES:
 - Use {{opening_line}}, {{first_name}}, {{company}}, {{title}}, {{city}}, {{industry}} variables throughout
@@ -688,4 +689,99 @@ export async function testConnection(apiKey) {
     messages: [{ role: 'user', content: 'hi' }]
   });
   return !!msg.content[0].text;
+}
+
+export async function scoreLeadsWithAI({ leads, campaign }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+
+  const leadsSnapshot = leads.map(l => ({
+    id: l.id,
+    name: l.name,
+    company: l.company,
+    title: l.title,
+    phone: l.phone,
+    email: l.email,
+    website: l.website,
+    address: l.address,
+    category: l.category,
+    rating: l.rating,
+    reviewCount: l.reviewCount,
+    enriched: l.enriched,
+    tier: l.tier,
+  }));
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: 'You are a B2B lead scoring engine. Score each lead 0-100 based on: data completeness, business quality, decision-maker seniority, contact reachability. Return only valid JSON.',
+    messages: [{
+      role: 'user',
+      content: `CAMPAIGN: "${campaign.name}"
+OFFER: ${campaign.offer || ''}
+GOAL: ${campaign.goal || ''}
+TARGET AUDIENCE: ${campaign.targetAudience || ''}
+
+LEADS:
+${JSON.stringify(leadsSnapshot)}
+
+Score each lead 0-100. Tier: A=70+, B=40-69, C<40.
+
+Return JSON:
+{
+  "scored": [
+    { "leadId": 123, "aiScore": 85, "aiScoreReason": "Has email + phone, high-rated business, clear decision maker", "tier": "A" }
+  ]
+}`
+    }]
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'ai_score_leads' });
+  return parseJSON(msg.content[0].text);
+}
+
+export async function generateOptimizationSuggestions({ campaign, metrics }) {
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 2048,
+    system: 'You are a B2B outreach optimization analyst for Malaysia. Analyse campaign metrics and suggest specific, actionable improvements. Return only valid JSON.',
+    messages: [{
+      role: 'user',
+      content: `CAMPAIGN: "${campaign.name}"
+CHANNELS: ${(campaign.channels || []).join(', ')}
+OFFER: ${campaign.offer || ''}
+GOAL: ${campaign.goal || ''}
+
+METRICS:
+- Emails sent: ${metrics.emailsSent}
+- WA sent: ${metrics.waSent}
+- Calls made: ${metrics.callsMade}
+- Open rate: ${metrics.openRate}%
+- Reply rate: ${metrics.replyRate}%
+- Meetings booked: ${metrics.meetingsBooked}
+- Days running: ${metrics.daysRunning}
+- Tier breakdown: ${JSON.stringify(metrics.tierBreakdown || {})}
+
+Generate up to 5 specific, actionable improvement suggestions.
+
+Return JSON:
+{
+  "suggestions": [
+    {
+      "priority": 1,
+      "category": "subject|message|timing|channel|targeting",
+      "title": "short title",
+      "detail": "specific actionable advice",
+      "impact": "high|medium|low"
+    }
+  ]
+}`
+    }]
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'optimization_suggestions' });
+  return parseJSON(msg.content[0].text);
 }
