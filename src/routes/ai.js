@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection, generateCampaignFromGoal, analyzeCampaignPerformance, prioritizeLeads, generateSmartFollowup } from '../services/claude.js';
+import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection, generateCampaignFromGoal, analyzeCampaignPerformance, prioritizeLeads, generateSmartFollowup, generateOutreachAssets } from '../services/claude.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { getCache, setCache, hashInput } from '../services/aiCache.js';
 import { PrismaClient } from '@prisma/client';
@@ -110,6 +110,10 @@ router.post('/prioritize-leads', requireAuth, async (req, res, next) => {
     await setCache('campaign', String(campaignId), 'lead_priority', result, inputHash, 6);
     res.json(result);
   } catch (e) { next(e); }
+});
+
+router.post('/generate-assets', requireAuth, async (req, res, next) => {
+  try { res.json(await generateOutreachAssets(req.body)); } catch (e) { next(e); }
 });
 
 router.post('/smart-followup', requireAuth, async (req, res, next) => {

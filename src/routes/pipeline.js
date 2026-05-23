@@ -284,6 +284,18 @@ router.patch('/:campaignId/assets/:assetId', requireAuth, async (req, res, next)
   } catch (e) { next(e); }
 });
 
+// POST /pipeline/:campaignId/assets/add — add a standalone asset from AI Studio
+router.post('/:campaignId/assets/add', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const { assetType, channel, label, subject, body, approved } = req.body;
+    const asset = await prisma.campaignAsset.create({
+      data: { campaignId, assetType: assetType || 'custom', channel: channel || 'email', label: label || 'Asset', subject: subject || '', body: body || '', approved: !!approved },
+    });
+    res.json(asset);
+  } catch (e) { next(e); }
+});
+
 // POST /pipeline/:campaignId/approve-all-assets — quick approve all
 router.post('/:campaignId/approve-all-assets', requireAuth, async (req, res, next) => {
   try {

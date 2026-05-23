@@ -785,3 +785,49 @@ Return JSON:
   logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'optimization_suggestions' });
   return parseJSON(msg.content[0].text);
 }
+
+export async function generateOutreachAssets({ bizName, industry, offer, targetAudience, goal, tone, lang, channels, dreamOutcome }) {
+  const client = await getClient();
+  const model = 'claude-opus-4-7';
+
+  const wantEmail = channels.includes('email');
+  const wantWa = channels.includes('wa');
+  const wantVoice = channels.includes('voice');
+
+  const msg = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    system: `You are an expert B2B outreach copywriter for Malaysian SMEs. Write compelling, concise outreach content.
+Language: ${lang === 'BM' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Chinese (Simplified)' : 'English'}
+Tone: ${tone}
+Return only valid JSON, no extra text.`,
+    messages: [{
+      role: 'user',
+      content: `Generate outreach assets for this business:
+Business: ${bizName}${industry ? ` (${industry})` : ''}
+Offer: ${offer}
+Target Audience: ${targetAudience}
+Goal: ${goal || dreamOutcome || 'Book a discovery call'}
+
+${wantEmail ? `Generate 2 email variants (cold intro + follow-up). Each: subject line + body under 150 words.` : ''}
+${wantWa ? `Generate 2 WhatsApp messages (intro + follow-up). Each under 60 words, conversational.` : ''}
+${wantVoice ? `Generate 1 voice call script under 60 seconds. Include warm opener and clear value prop.` : ''}
+
+Return JSON:
+{
+  ${wantEmail ? `"emails": [
+    { "label": "Email 1 — Cold Intro", "assetType": "email_1", "subject": "...", "body": "..." },
+    { "label": "Email 2 — Follow-up", "assetType": "email_2", "subject": "...", "body": "..." }
+  ],` : '"emails": [],'}
+  ${wantWa ? `"whatsapps": [
+    { "label": "WA 1 — Intro", "assetType": "wa_1", "body": "..." },
+    { "label": "WA 2 — Follow-up", "assetType": "wa_2", "body": "..." }
+  ],` : '"whatsapps": [],'}
+  ${wantVoice ? `"voice": { "label": "Voice Script", "assetType": "voice_1", "body": "..." }` : '"voice": null'}
+}`,
+    }],
+  });
+
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_outreach_assets' });
+  return parseJSON(msg.content[0].text);
+}
