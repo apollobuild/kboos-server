@@ -1,9 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { generateEmail } from '../services/claude.js';
-import { sendEmail } from '../services/sendgrid.js';
-import { sendViaSMTP } from '../services/smtp.js';
-import { sendTemplate } from '../services/wati.js';
-import { makeCall } from '../services/vapi.js';
+import { enqueue } from '../services/queue.js';
 
 const prisma = new PrismaClient();
 
@@ -14,55 +10,23 @@ function deriveStatus(type) {
   return 'contacted';
 }
 
-async function dispatchAction(type, lead, campaign) {
-  const config = campaign.config || {};
-  try {
-    if (type === 'wa') {
-      if (!lead.phone) return { ok: false, error: 'No phone number' };
-      const templateName = config.waTemplateName || 'kboos_intro_v1';
-      const firstName = lead.name?.split(' ')[0] || lead.name;
-      await sendTemplate({ phone: lead.phone, templateName, parameters: [{ name: 'first_name', value: firstName }] });
-      return { ok: true };
-    }
-
-    if (type === 'email') {
-      if (!lead.email) return { ok: false, error: 'No email address' };
-      const emailContent = await generateEmail({
-        bizName: campaign.bizName,
-        campaignName: campaign.name,
-        prompt: config.emailPrompt || 'Write a warm, professional B2B cold email. Be concise.',
-        lead: { name: lead.name, company: lead.company, title: lead.title, lang: lead.lang || 'EN' },
-      });
-      const subject = Array.isArray(emailContent.subjects) ? emailContent.subjects[0] : (emailContent.subject || 'Quick question');
-      const fromName = config.fromName || `${campaign.bizName} Team`;
-      const replyTo = config.replyTo;
-
-      if (config.smtp?.user && config.smtp?.pass) {
-        await sendViaSMTP({ smtpConfig: config.smtp, to: lead.email, subject, body: emailContent.body, fromName, replyTo });
-      } else {
-        await sendEmail({ to: lead.email, subject, body: emailContent.body, fromName, fromEmail: config.fromEmail || 'outreach@kboos.app', replyTo });
-      }
-      return { ok: true };
-    }
-
-    if (type === 'call') {
-      if (!lead.phone) return { ok: false, error: 'No phone number' };
-      await makeCall({ phone: lead.phone, leadName: lead.name, bizName: campaign.bizName, campaignScript: config.voiceScript });
-      return { ok: true };
-    }
-
-    return { ok: false, error: `Unknown action type: ${type}` };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-
 function isWithinSendWindow(now) {
   // 9am–6pm Malaysia time (UTC+8)
   const klOffset = 8 * 60;
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
   const klMinutes = (utcMinutes + klOffset) % (24 * 60);
   return klMinutes >= 9 * 60 && klMinutes < 18 * 60;
+}
+
+// Map each sequence step to its asset type (email_1, email_2, wa_1, voice_1, etc.)
+function buildAssetTypeMap(sequence) {
+  const counters = {};
+  return sequence.map(step => {
+    if (step.assetType) return step.assetType;
+    const key = step.type === 'call' ? 'voice' : step.type;
+    counters[key] = (counters[key] || 0) + 1;
+    return `${key}_${counters[key]}`;
+  });
 }
 
 export async function runTick() {
@@ -84,16 +48,22 @@ export async function runTick() {
     return;
   }
 
+  let totalEnqueued = 0;
+
   for (const campaign of campaigns) {
     try {
       const daysSinceStart = Math.floor((now - new Date(campaign.startedAt)) / (1000 * 60 * 60 * 24));
       const sequence = Array.isArray(campaign.sequence) ? campaign.sequence : [];
-      const dailyLimit = campaign.dailyLimit || 200;
+      if (sequence.length === 0) continue;
 
-      const sentToday = await prisma.campaignAction.count({
-        where: { campaignId: campaign.id, sentAt: { gte: todayStart }, status: 'sent' },
+      const dailyLimit = campaign.dailyLimit || 200;
+      const assetTypeMap = buildAssetTypeMap(sequence);
+
+      // Count pending + sent today to prevent over-enqueuing on each hourly tick
+      const usedToday = await prisma.campaignAction.count({
+        where: { campaignId: campaign.id, sentAt: { gte: todayStart }, status: { in: ['sent', 'pending'] } },
       });
-      let budget = dailyLimit - sentToday;
+      let budget = dailyLimit - usedToday;
       if (budget <= 0) {
         console.log(`[Engine] Campaign ${campaign.id} hit daily limit (${dailyLimit})`);
         continue;
@@ -102,13 +72,11 @@ export async function runTick() {
       const config = campaign.config || {};
       const pausedChannels = Array.isArray(config.pausedChannels) ? config.pausedChannels : [];
 
-      for (const step of sequence) {
+      for (let si = 0; si < sequence.length; si++) {
+        const step = sequence[si];
         if (step.day > daysSinceStart) continue;
         if (budget <= 0) break;
-        if (pausedChannels.includes(step.type)) {
-          console.log(`[Engine] Campaign ${campaign.id} — channel "${step.type}" paused, skipping`);
-          continue;
-        }
+        if (pausedChannels.includes(step.type)) continue;
 
         const actioned = await prisma.campaignAction.findMany({
           where: { campaignId: campaign.id, stepDay: step.day, type: step.type },
@@ -130,33 +98,52 @@ export async function runTick() {
           take: budget,
         });
 
+        if (leads.length === 0) continue;
+
+        const assetType = assetTypeMap[si];
+        const queueName = step.type === 'email' ? 'outreach-email'
+          : step.type === 'wa' ? 'outreach-wa'
+          : 'outreach-voice';
+
         for (const lead of leads) {
-          // Create pending action first to prevent double-send on crash
           const action = await prisma.campaignAction.create({
-            data: { leadId: lead.id, campaignId: campaign.id, type: step.type, stepDay: step.day, status: 'pending', sentAt: now },
+            data: {
+              leadId: lead.id,
+              campaignId: campaign.id,
+              type: step.type,
+              stepDay: step.day,
+              status: 'pending',
+              sentAt: now,
+            },
           });
 
-          const result = await dispatchAction(step.type, lead, campaign);
-
-          await prisma.campaignAction.update({
-            where: { id: action.id },
-            data: { status: result.ok ? 'sent' : 'failed', errorMsg: result.error || null },
+          await enqueue(queueName, {
+            leadId: lead.id,
+            campaignId: campaign.id,
+            assetType,
+            stepDay: step.day,
+            actionId: action.id,
           });
 
-          if (result.ok) {
-            const isFirstContact = ['new', 'scraped', 'personalizing'].includes(lead.status);
+          // Optimistically advance lead status on first contact
+          const isFirstContact = ['new', 'scraped', 'personalizing'].includes(lead.status);
+          if (isFirstContact) {
             await prisma.lead.update({
               where: { id: lead.id },
-              data: { lastContactedAt: now, ...(isFirstContact ? { status: deriveStatus(step.type) } : {}) },
+              data: { lastContactedAt: now, status: deriveStatus(step.type) },
             });
-            budget--;
           }
+
+          budget--;
+          totalEnqueued++;
         }
+
+        console.log(`[Engine] Campaign ${campaign.id} day ${step.day} ${step.type}: enqueued ${leads.length} (${assetType})`);
       }
     } catch (err) {
       console.error(`[Engine] Error on campaign ${campaign.id}:`, err.message);
     }
   }
 
-  console.log(`[Engine] Tick complete — ${campaigns.length} campaigns checked`);
+  console.log(`[Engine] Tick complete — ${campaigns.length} campaigns, ${totalEnqueued} jobs enqueued`);
 }

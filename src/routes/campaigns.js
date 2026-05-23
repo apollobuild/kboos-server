@@ -82,4 +82,46 @@ router.get('/:id/actions', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /campaigns/:id/actions/today — daily send progress for dashboard
+router.get('/:id/actions/today', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.id);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Not found' });
+
+    const rows = await prisma.campaignAction.groupBy({
+      by: ['type', 'status'],
+      where: { campaignId, sentAt: { gte: todayStart } },
+      _count: { id: true },
+    });
+
+    const channels = {
+      email: { sent: 0, failed: 0, pending: 0 },
+      wa:    { sent: 0, failed: 0, pending: 0 },
+      voice: { sent: 0, failed: 0, pending: 0 },
+    };
+    for (const row of rows) {
+      const key = row.type === 'call' ? 'voice' : row.type;
+      if (channels[key] && row.status in channels[key]) {
+        channels[key][row.status] = row._count.id;
+      }
+    }
+
+    const totalSent    = Object.values(channels).reduce((s, c) => s + c.sent, 0);
+    const totalPending = Object.values(channels).reduce((s, c) => s + c.pending, 0);
+    const totalFailed  = Object.values(channels).reduce((s, c) => s + c.failed, 0);
+
+    res.json({
+      channels,
+      totalSent,
+      totalPending,
+      totalFailed,
+      dailyLimit: campaign.dailyLimit || 200,
+    });
+  } catch (e) { next(e); }
+});
+
 export default router;

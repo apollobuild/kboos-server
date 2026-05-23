@@ -77,4 +77,42 @@ router.get('/overview', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /analytics/campaigns/today — today stats for all active campaigns
+router.get('/campaigns/today', requireAuth, async (req, res, next) => {
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const activeCampaigns = await prisma.campaign.findMany({
+      where: { status: 'active', startedAt: { not: null } },
+      select: { id: true, name: true, bizName: true, dailyLimit: true },
+    });
+
+    const results = await Promise.all(activeCampaigns.map(async (c) => {
+      const rows = await prisma.campaignAction.groupBy({
+        by: ['type', 'status'],
+        where: { campaignId: c.id, sentAt: { gte: todayStart } },
+        _count: { id: true },
+      });
+
+      const channels = {
+        email: { sent: 0, failed: 0, pending: 0 },
+        wa:    { sent: 0, failed: 0, pending: 0 },
+        voice: { sent: 0, failed: 0, pending: 0 },
+      };
+      for (const row of rows) {
+        const key = row.type === 'call' ? 'voice' : row.type;
+        if (channels[key] && row.status in channels[key]) {
+          channels[key][row.status] = row._count.id;
+        }
+      }
+
+      const totalSent = Object.values(channels).reduce((s, ch) => s + ch.sent, 0);
+      return { id: c.id, name: c.name, bizName: c.bizName, dailyLimit: c.dailyLimit || 200, channels, totalSent };
+    }));
+
+    res.json(results);
+  } catch (e) { next(e); }
+});
+
 export default router;
