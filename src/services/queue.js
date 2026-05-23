@@ -36,7 +36,7 @@ export async function registerWorker(queueName, concurrency, handler) {
 
 export async function getQueueStats() {
   const q = getQueue();
-  const queues = ['lead-validation','lead-enrichment','ai-asset-gen','lead-personalize','outreach-email','outreach-wa','outreach-voice','channel-eligibility'];
+  const queues = ['lead-qualify','lead-enrichment','lead-ai-score','ai-asset-gen','lead-personalize','lead-scrape','outreach-email','outreach-wa','outreach-voice','channel-eligibility','optimization-loop'];
   const stats = {};
   for (const name of queues) {
     try {

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { enqueue, enqueueBatch } from '../services/queue.js';
+import { getApiKey } from '../services/apiKeys.js';
+import { generateCampaignAssets } from '../services/claude.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -19,7 +21,14 @@ router.get('/:campaignId', requireAuth, async (req, res, next) => {
     const personalizedLeads = await prisma.lead.count({ where: { campaignId, personalized: true } });
     const totalLeads = await prisma.lead.count({ where: { campaignId } });
 
-    res.json({ campaign, pipeline: pipeline || { campaignId, stage: 'draft' }, assetCount, approvedAssets, personalizedLeads, totalLeads });
+    res.json({
+      campaign,
+      pipeline: pipeline || { campaignId, stage: 'draft' },
+      assetCount,
+      approvedAssets,
+      personalizedLeads,
+      totalLeads,
+    });
   } catch (e) { next(e); }
 });
 
@@ -118,8 +127,8 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
 
     await prisma.campaignPipeline.upsert({
       where: { campaignId },
-      update: { stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date(), lastError: null },
-      create: { campaignId, stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date() },
+      update: { stage: 'qualifying', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date(), lastError: null },
+      create: { campaignId, stage: 'qualifying', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date() },
     });
 
     await prisma.activity.create({
@@ -130,68 +139,111 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/validate — trigger lead validation
-router.post('/:campaignId/validate', requireAuth, async (req, res, next) => {
+// POST /pipeline/:campaignId/qualify — enqueue qualify job
+router.post('/:campaignId/qualify', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
     await prisma.campaignPipeline.upsert({
       where: { campaignId },
-      update: { stage: 'validating', lastError: null },
-      create: { campaignId, stage: 'validating' },
+      update: { stage: 'qualifying', lastError: null },
+      create: { campaignId, stage: 'qualifying' },
     });
-    await enqueue('lead-validation', { campaignId }, { priority: 2 });
-    res.json({ ok: true, stage: 'validating' });
+
+    await enqueue('lead-qualify', { campaignId }, { priority: 2 });
+    res.json({ ok: true, stage: 'qualifying' });
   } catch (e) { next(e); }
 });
 
-// GET /pipeline/:campaignId/validation-summary
-router.get('/:campaignId/validation-summary', requireAuth, async (req, res, next) => {
+// GET /pipeline/:campaignId/qualify-summary — tier breakdown
+router.get('/:campaignId/qualify-summary', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
     const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+    const totalLeads = await prisma.lead.count({ where: { campaignId } });
 
     const tiers = await Promise.all(['A', 'B', 'C'].map(async tier => {
-      const count = await prisma.leadScore.count({ where: { leadId: { in: (await prisma.lead.findMany({ where: { campaignId }, select: { id: true } })).map(l => l.id) }, tier } });
+      const count = await prisma.lead.count({ where: { campaignId, tier } });
       const samples = await prisma.lead.findMany({
         where: { campaignId, tier },
-        select: { id: true, name: true, company: true, title: true, phone: true, email: true, validationScore: true },
-        take: 5,
+        select: { id: true, name: true, company: true, title: true, phone: true, email: true, validationScore: true, rawQualityScore: true },
+        take: 3,
       });
       return { tier, count, samples };
     }));
 
-    res.json({ pipeline, tiers, totalLeads: (pipeline?.scrapeTotal || 0) });
+    res.json({ pipeline, tiers, totalLeads });
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/approve-tiers
-router.post('/:campaignId/approve-tiers', requireAuth, async (req, res, next) => {
+// POST /pipeline/:campaignId/select-enrichment-tiers — approve which tiers to enrich
+router.post('/:campaignId/select-enrichment-tiers', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
-    const { tiers } = req.body; // e.g. ['A', 'B']
+    const { tiers } = req.body;
     if (!tiers || !Array.isArray(tiers)) return res.status(400).json({ error: 'tiers array required' });
 
-    await prisma.campaignPipeline.update({ where: { campaignId }, data: { approvedTiers: tiers } });
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { approvedTiers: tiers, stage: 'ready_for_enrichment' },
+    });
 
-    // Mark leads not in approved tiers as low_quality (exclude from outreach)
-    const approvedLeadIds = (await prisma.lead.findMany({ where: { campaignId, tier: { in: tiers } }, select: { id: true } })).map(l => l.id);
-    await prisma.lead.updateMany({ where: { campaignId, tier: { notIn: tiers } }, data: { status: 'low_quality' } });
-
-    // Trigger enrichment for approved leads
-    const totalToEnrich = approvedLeadIds.length;
-    await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'enriching', enrichTotal: totalToEnrich, enrichComplete: 0 } });
-    await enqueueBatch('lead-enrichment', approvedLeadIds.map(leadId => ({ leadId, campaignId })));
-
-    res.json({ ok: true, approved: approvedLeadIds.length, excluded: await prisma.lead.count({ where: { campaignId, status: 'low_quality' } }) });
+    res.json({ ok: true, approvedTiers: tiers, stage: 'ready_for_enrichment' });
   } catch (e) { next(e); }
 });
 
-// GET /pipeline/:campaignId/enrich-status
-router.get('/:campaignId/enrich-status', requireAuth, async (req, res, next) => {
+// POST /pipeline/:campaignId/enrich — manual trigger: enqueue enrichment for approved tiers
+router.post('/:campaignId/enrich', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
     const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
-    res.json({ stage: pipeline?.stage, enrichTotal: pipeline?.enrichTotal || 0, enrichComplete: pipeline?.enrichComplete || 0 });
+    const approvedTiers = pipeline?.approvedTiers || ['A', 'B'];
+
+    const leads = await prisma.lead.findMany({
+      where: { campaignId, tier: { in: approvedTiers } },
+      select: { id: true },
+    });
+
+    if (!leads.length) return res.status(400).json({ error: 'No leads in approved tiers to enrich' });
+
+    const totalToEnrich = leads.length;
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { stage: 'enriching', enrichTotal: totalToEnrich, enrichComplete: 0 },
+    });
+
+    await enqueueBatch('lead-enrichment', leads.map(l => ({ leadId: l.id, campaignId })));
+    res.json({ ok: true, stage: 'enriching', total: totalToEnrich });
+  } catch (e) { next(e); }
+});
+
+// POST /pipeline/:campaignId/ai-score — enqueue AI scoring batch job
+router.post('/:campaignId/ai-score', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+    const approvedTiers = pipeline?.approvedTiers || ['A', 'B'];
+
+    const leads = await prisma.lead.findMany({
+      where: { campaignId, tier: { in: approvedTiers } },
+      select: { id: true },
+    });
+
+    const BATCH_SIZE = 50;
+    const batches = [];
+    for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+      batches.push(leads.slice(i, i + BATCH_SIZE).map(l => l.id));
+    }
+
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { stage: 'ai_scoring', aiScoreTotal: leads.length, aiScoreComplete: 0 },
+    });
+
+    await enqueueBatch('lead-ai-score', batches.map(leadIds => ({ campaignId, leadIds })));
+    res.json({ ok: true, stage: 'ai_scoring', total: leads.length, batches: batches.length });
   } catch (e) { next(e); }
 });
 
@@ -199,6 +251,9 @@ router.get('/:campaignId/enrich-status', requireAuth, async (req, res, next) => 
 router.post('/:campaignId/generate-assets', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
     await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'ai_generating', lastError: null } });
     await enqueue('ai-asset-gen', { campaignId }, { priority: 3 });
     res.json({ ok: true, stage: 'ai_generating' });
@@ -248,7 +303,7 @@ router.post('/:campaignId/personalize', requireAuth, async (req, res, next) => {
     });
 
     if (leads.length === 0) {
-      await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'personalized', personalizedAt: new Date(), personalizeTotal: 0, personalizeComplete: 0 } });
+      await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'personalizing', personalizedAt: new Date(), personalizeTotal: 0, personalizeComplete: 0 } });
       return res.json({ ok: true, total: 0 });
     }
 
@@ -265,52 +320,199 @@ router.post('/:campaignId/personalize', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /pipeline/:campaignId/personalize-status
-router.get('/:campaignId/personalize-status', requireAuth, async (req, res, next) => {
+// POST /pipeline/:campaignId/configure-channels — save channel config and run eligibility
+router.post('/:campaignId/configure-channels', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
-    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
-    const personalized = await prisma.lead.count({ where: { campaignId, personalized: true } });
-    res.json({ stage: pipeline?.stage, personalizeTotal: pipeline?.personalizeTotal || 0, personalizeComplete: pipeline?.personalizeComplete || personalized });
-  } catch (e) { next(e); }
-});
+    const { channels = [], strategy = 'balanced' } = req.body;
 
-// GET /pipeline/:campaignId/eligibility
-router.get('/:campaignId/eligibility', requireAuth, async (req, res, next) => {
-  try {
-    const campaignId = parseInt(req.params.campaignId);
-    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
-    const ineligibleSamples = await prisma.leadEligibility.findMany({
-      where: { campaignId, emailEligible: false, waEligible: false, voiceEligible: false },
-      take: 10,
-      include: { },
+    if (!channels.length) return res.status(400).json({ error: 'channels array is required' });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    // Save channel config to pipeline and campaign
+    await prisma.campaignPipeline.upsert({
+      where: { campaignId },
+      update: { channelConfig: { channels, strategy } },
+      create: { campaignId, channelConfig: { channels, strategy } },
     });
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { channels, channelStrategy: strategy },
+    });
+
+    // Run eligibility filter inline for all leads
+    const leads = await prisma.lead.findMany({
+      where: { campaignId },
+      select: { id: true, email: true, phone: true },
+    });
+
+    let emailEligible = 0, emailIneligible = 0;
+    let waEligible = 0, waIneligible = 0;
+    let voiceEligible = 0, voiceIneligible = 0;
+
+    for (const lead of leads) {
+      const hasEmail = channels.includes('email') && lead.email && lead.email.includes('@') && lead.email.includes('.');
+      const digits = (lead.phone || '').replace(/\D/g, '');
+      const hasWa = channels.includes('wa') && lead.phone && digits.startsWith('60') && digits.length >= 10 && digits.length <= 12;
+      const hasVoice = channels.includes('voice') && !!lead.phone;
+
+      if (channels.includes('email')) { hasEmail ? emailEligible++ : emailIneligible++; }
+      if (channels.includes('wa')) { hasWa ? waEligible++ : waIneligible++; }
+      if (channels.includes('voice')) { hasVoice ? voiceEligible++ : voiceIneligible++; }
+
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          emailEligible: hasEmail,
+          waEligible: hasWa,
+          voiceEligible: hasVoice,
+          eligibilityChecked: true,
+        },
+      });
+    }
+
+    // Update pipeline with eligibility counts and stage
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: {
+        stage: 'channels_configured',
+        eligibleEmail: emailEligible,
+        eligibleWa: waEligible,
+        eligibleVoice: voiceEligible,
+        ineligibleCount: leads.length - Math.max(emailEligible, waEligible, voiceEligible),
+      },
+    });
+
     res.json({
-      eligibleEmail: pipeline?.eligibleEmail || 0,
-      eligibleWa: pipeline?.eligibleWa || 0,
-      eligibleVoice: pipeline?.eligibleVoice || 0,
-      ineligibleCount: pipeline?.ineligibleCount || 0,
-      stage: pipeline?.stage,
+      ok: true,
+      stage: 'channels_configured',
+      eligibility: {
+        email: { eligible: emailEligible, ineligible: emailIneligible },
+        wa: { eligible: waEligible, ineligible: waIneligible },
+        voice: { eligible: voiceEligible, ineligible: voiceIneligible },
+        totalLeads: leads.length,
+      },
     });
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/check-eligibility — trigger eligibility check
-router.post('/:campaignId/check-eligibility', requireAuth, async (req, res, next) => {
+// GET /pipeline/:campaignId/channel-eligibility
+router.get('/:campaignId/channel-eligibility', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
-    await enqueue('channel-eligibility', { campaignId });
-    res.json({ ok: true });
+
+    const [emailEligible, emailIneligible, waEligible, waIneligible, voiceEligible, voiceIneligible] = await Promise.all([
+      prisma.lead.count({ where: { campaignId, emailEligible: true } }),
+      prisma.lead.count({ where: { campaignId, emailEligible: false, eligibilityChecked: true } }),
+      prisma.lead.count({ where: { campaignId, waEligible: true } }),
+      prisma.lead.count({ where: { campaignId, waEligible: false, eligibilityChecked: true } }),
+      prisma.lead.count({ where: { campaignId, voiceEligible: true } }),
+      prisma.lead.count({ where: { campaignId, voiceEligible: false, eligibilityChecked: true } }),
+    ]);
+
+    const totalEligible = await prisma.lead.count({
+      where: { campaignId, eligibilityChecked: true, OR: [{ emailEligible: true }, { waEligible: true }, { voiceEligible: true }] },
+    });
+    const totalIneligible = await prisma.lead.count({
+      where: { campaignId, eligibilityChecked: true, emailEligible: false, waEligible: false, voiceEligible: false },
+    });
+
+    res.json({
+      email: { eligible: emailEligible, ineligible: emailIneligible, reasons: [] },
+      wa: { eligible: waEligible, ineligible: waIneligible },
+      voice: { eligible: voiceEligible, ineligible: voiceIneligible },
+      totalEligible,
+      totalIneligible,
+    });
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/launch — final launch
+// POST /pipeline/:campaignId/run-deliverability — run all checks
+router.post('/:campaignId/run-deliverability', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const checks = [];
+    let score = 100;
+
+    // Check Claude key
+    try {
+      const k = await getApiKey('claude');
+      checks.push({ name: 'Claude AI', status: k ? 'ok' : 'fail', detail: k ? 'Connected' : 'API key missing' });
+      if (!k) score -= 30;
+    } catch { score -= 30; checks.push({ name: 'Claude AI', status: 'fail', detail: 'Error checking key' }); }
+
+    // Check SendGrid
+    try {
+      const k = await getApiKey('sendgrid');
+      checks.push({ name: 'SendGrid Email', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — email channel disabled' });
+      if (!k) score -= 20;
+    } catch { score -= 20; checks.push({ name: 'SendGrid Email', status: 'warn', detail: 'Error checking key' }); }
+
+    // Check WATI
+    try {
+      const k = await getApiKey('wati');
+      checks.push({ name: 'WATI WhatsApp', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — WhatsApp channel disabled' });
+      if (!k) score -= 20;
+    } catch { score -= 20; checks.push({ name: 'WATI WhatsApp', status: 'warn', detail: 'Error checking key' }); }
+
+    // Check Vapi
+    try {
+      const k = await getApiKey('vapi');
+      checks.push({ name: 'Vapi Voice', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — voice channel disabled' });
+      if (!k) score -= 10;
+    } catch { score -= 10; checks.push({ name: 'Vapi Voice', status: 'warn', detail: 'Error checking key' }); }
+
+    // Check eligible leads exist
+    const eligibleCount = await prisma.lead.count({
+      where: {
+        campaignId,
+        eligibilityChecked: true,
+        OR: [{ emailEligible: true }, { waEligible: true }, { voiceEligible: true }],
+      },
+    });
+    checks.push({
+      name: 'Eligible Leads',
+      status: eligibleCount > 0 ? 'ok' : 'fail',
+      detail: `${eligibleCount} leads ready for outreach`,
+    });
+    if (eligibleCount === 0) score -= 30;
+
+    const finalScore = Math.max(0, score);
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: {
+        deliverabilityScore: finalScore,
+        deliverabilityDetail: { checks },
+        stage: finalScore >= 50 ? 'ready_to_launch' : 'deliverability_check',
+      },
+    });
+
+    res.json({ score: finalScore, checks, stage: finalScore >= 50 ? 'ready_to_launch' : 'deliverability_check' });
+  } catch (e) { next(e); }
+});
+
+// GET /pipeline/:campaignId/deliverability — return score + detail
+router.get('/:campaignId/deliverability', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+    res.json({
+      deliverabilityScore: pipeline?.deliverabilityScore || 0,
+      deliverabilityDetail: pipeline?.deliverabilityDetail || null,
+      stage: pipeline?.stage || 'draft',
+    });
+  } catch (e) { next(e); }
+});
+
+// POST /pipeline/:campaignId/launch — final launch (from ready_to_launch)
 router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
     const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
 
-    if (!pipeline || pipeline.stage !== 'awaiting_launch') {
+    if (!pipeline || pipeline.stage !== 'ready_to_launch') {
       return res.status(400).json({ error: `Cannot launch from stage: ${pipeline?.stage || 'no pipeline'}` });
     }
 

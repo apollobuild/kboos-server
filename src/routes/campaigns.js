@@ -10,7 +10,18 @@ router.get('/', requireAuth, async (req, res, next) => {
 });
 
 router.post('/', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.campaign.create({ data: req.body })); } catch (e) { next(e); }
+  try {
+    const data = {
+      ...req.body,
+      offer: req.body.offer || '',
+      goal: req.body.goal || '',
+      targetAudience: req.body.targetAudience || req.body.target_audience || '',
+      personalizationLevel: req.body.personalizationLevel || 2,
+      leadSource: req.body.leadSource || 'gmaps',
+      channelStrategy: req.body.channelStrategy || null,
+    };
+    res.json(await prisma.campaign.create({ data }));
+  } catch (e) { next(e); }
 });
 
 router.patch('/:id/toggle', requireAuth, async (req, res, next) => {
@@ -29,7 +40,12 @@ router.patch('/:id/toggle', requireAuth, async (req, res, next) => {
 });
 
 router.patch('/:id', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.campaign.update({ where: { id: parseInt(req.params.id) }, data: req.body })); } catch (e) { next(e); }
+  try {
+    const data = { ...req.body };
+    // Map snake_case aliases
+    if (req.body.target_audience && !req.body.targetAudience) data.targetAudience = req.body.target_audience;
+    res.json(await prisma.campaign.update({ where: { id: parseInt(req.params.id) }, data }));
+  } catch (e) { next(e); }
 });
 
 router.delete('/:id', requireAuth, async (req, res, next) => {

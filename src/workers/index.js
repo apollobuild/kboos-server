@@ -8,6 +8,9 @@ import { handleOutreachEmail } from './outreachEmail.js';
 import { handleOutreachWa } from './outreachWa.js';
 import { handleOutreachVoice } from './outreachVoice.js';
 import { handleScrape } from './scrape.js';
+import { handleQualify } from './qualify.js';
+import { handleAiScore } from './aiScore.js';
+import { handleOptimize } from './optimize.js';
 
 export async function startWorkers() {
   await registerWorker('lead-validation', 4, handleValidation);
@@ -19,5 +22,8 @@ export async function startWorkers() {
   await registerWorker('outreach-wa', 3, handleOutreachWa);
   await registerWorker('outreach-voice', 2, handleOutreachVoice);
   await registerWorker('lead-scrape', 2, handleScrape);
-  console.log('[Workers] All 9 workers registered');
+  await registerWorker('lead-qualify', 4, handleQualify);
+  await registerWorker('lead-ai-score', 3, handleAiScore);
+  await registerWorker('optimization-loop', 1, handleOptimize);
+  console.log('[Workers] All 12 workers registered');
 }
