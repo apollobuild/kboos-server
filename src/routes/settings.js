@@ -352,4 +352,30 @@ router.post('/reply-goal', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /settings/auto-reply
+router.get('/auto-reply', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    res.json(s?.autoReplyConfig || { enabled: false, mode: 'autopilot', maxReplies: 5 });
+  } catch (e) { next(e); }
+});
+
+// POST /settings/auto-reply
+router.post('/auto-reply', requireAuth, async (req, res, next) => {
+  try {
+    const { enabled, mode, maxReplies } = req.body;
+    const autoReplyConfig = {
+      enabled:    !!enabled,
+      mode:       mode === 'assist' ? 'assist' : 'autopilot',
+      maxReplies: Math.max(1, Math.min(10, parseInt(maxReplies) || 5)),
+    };
+    await prisma.appSettings.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', autoReplyConfig },
+      update: { autoReplyConfig },
+    });
+    res.json(autoReplyConfig);
+  } catch (e) { next(e); }
+});
+
 export default router;

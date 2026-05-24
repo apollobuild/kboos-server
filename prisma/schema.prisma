@@ -173,6 +173,7 @@ model AppSettings {
   usdRmRate       Float   @default(4.70)
   replyPersonas  Json @default("[]")
   replyGoals     Json @default("[]")
+  autoReplyConfig Json?
 }
 
 model ApiUsageLog {

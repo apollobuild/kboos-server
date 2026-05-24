@@ -5,6 +5,7 @@ import multer from 'multer';
 import { sendMessage } from '../services/wati.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { logClaude } from '../services/costLogger.js';
+import { enqueue } from '../services/queue.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -126,6 +127,10 @@ router.post('/sendgrid-inbound', upload.none(), async (req, res) => {
       },
     }).catch(() => {});
 
+    // Trigger AI auto-reply
+    const savedReply2 = existing || await prisma.reply.findFirst({ where: { leadId: lead.id, channel: 'email' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+    if (savedReply2) enqueue('auto-reply', { replyId: savedReply2.id, leadId: lead.id }).catch(() => {});
+
   } catch (e) {
     console.error('[Webhook] sendgrid-inbound error:', e.message);
   }
@@ -209,6 +214,10 @@ router.post('/wati', async (req, res) => {
             tag: 'Inbox',
           },
         }).catch(() => {});
+
+        // Trigger AI auto-reply
+        const savedReply = existing || await prisma.reply.findFirst({ where: { leadId: lead.id, channel: 'whatsapp' }, orderBy: { createdAt: 'desc' } }).catch(() => null);
+        if (savedReply) enqueue('auto-reply', { replyId: savedReply.id, leadId: lead.id }).catch(() => {});
       }
     }
 

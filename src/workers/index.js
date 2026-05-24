@@ -1,4 +1,5 @@
 import { registerWorker } from '../services/queue.js';
+import { handleAutoReply } from './autoReply.js';
 import { handleValidation } from './validation.js';
 import { handleEnrichment } from './enrichment.js';
 import { handleAssetGen } from './assetGen.js';
@@ -25,5 +26,6 @@ export async function startWorkers() {
   await registerWorker('lead-qualify', 4, handleQualify);
   await registerWorker('lead-ai-score', 3, handleAiScore);
   await registerWorker('optimization-loop', 1, handleOptimize);
-  console.log('[Workers] All 12 workers registered');
+  await registerWorker('auto-reply', 3, handleAutoReply);
+  console.log('[Workers] All 13 workers registered');
 }
