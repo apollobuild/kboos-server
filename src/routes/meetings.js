@@ -9,8 +9,9 @@ const prisma = new PrismaClient();
 // GET /meetings?bizId=X&campaignId=Y
 router.get('/', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { bizId, campaignId } = req.query;
-    const where = {};
+    const where = { tenantId: tid };
     if (bizId) where.bizId = bizId;
     if (campaignId) where.campaignId = parseInt(campaignId);
     const meetings = await prisma.meetingLog.findMany({ where, orderBy: { createdAt: 'desc' } });
@@ -21,6 +22,7 @@ router.get('/', requireAuth, async (req, res, next) => {
 // POST /meetings
 router.post('/', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { leadId, campaignId, bizId, meetingDate, meetingType, notes } = req.body;
     if (!leadId) return res.status(400).json({ error: 'leadId required' });
 
@@ -44,6 +46,7 @@ router.post('/', requireAuth, async (req, res, next) => {
         leadPhone: lead?.phone || '',
         leadEmail: lead?.email || '',
         bizName: biz?.name || campaign?.bizName || '',
+        tenantId: tid,
       },
     });
 
@@ -60,6 +63,7 @@ router.post('/', requireAuth, async (req, res, next) => {
 // PATCH /meetings/:id
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const id = parseInt(req.params.id);
     const { outcome, notes, revenue, meetingDate, closedAt } = req.body;
     const update = {};
@@ -74,7 +78,7 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
       update.remindersSent = ['booking_confirmation', 't24h', 't3h', 't1h', 't15min'];
     }
 
-    const meeting = await prisma.meetingLog.update({ where: { id }, data: update });
+    const meeting = await prisma.meetingLog.update({ where: { id, tenantId: tid }, data: update });
 
     // If deal closed, update lead
     if (outcome === 'completed' && revenue) {
@@ -88,15 +92,16 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
 // GET /meetings/revenue?bizId=X&campaignId=Y
 router.get('/revenue', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { bizId, campaignId } = req.query;
-    const where = {};
+    const where = { tenantId: tid };
     if (bizId) where.bizId = bizId;
     if (campaignId) where.campaignId = parseInt(campaignId);
 
     const meetings = await prisma.meetingLog.findMany({ where });
     const leads = campaignId
-      ? await prisma.lead.findMany({ where: { campaignId: parseInt(campaignId) }, select: { status: true, dealValue: true } })
-      : await prisma.lead.findMany({ where: bizId ? { bizId } : {}, select: { status: true, dealValue: true } });
+      ? await prisma.lead.findMany({ where: { campaignId: parseInt(campaignId), tenantId: tid }, select: { status: true, dealValue: true } })
+      : await prisma.lead.findMany({ where: { ...(bizId ? { bizId } : {}), tenantId: tid }, select: { status: true, dealValue: true } });
 
     const summary = {
       totalMeetings: meetings.length,
@@ -117,8 +122,9 @@ router.get('/revenue', requireAuth, async (req, res, next) => {
 // DELETE /meetings/:id
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const id = parseInt(req.params.id);
-    await prisma.meetingLog.delete({ where: { id } });
+    await prisma.meetingLog.delete({ where: { id, tenantId: tid } });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

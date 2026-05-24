@@ -70,7 +70,9 @@ router.delete('/team/:id', requireAuth, async (req, res, next) => {
 
 router.get('/users', requireAdmin, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const users = await prisma.user.findMany({
+      where: { tenantId: tid },
       select: { id: true, email: true, name: true, role: true, bizId: true, createdAt: true, lastLoginAt: true, inviteToken: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -295,6 +297,7 @@ router.get('/drive-status', requireAuth, async (req, res, next) => {
 
 router.post('/user', requireAdmin, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { email, name, role, bizId } = req.body;
 
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -303,7 +306,7 @@ router.post('/user', requireAdmin, async (req, res, next) => {
     const inviteToken = randomBytes(32).toString('hex');
     const placeholder = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
     const user = await prisma.user.create({
-      data: { email, password: placeholder, name, role: role || 'operator', bizId, inviteToken },
+      data: { email, password: placeholder, name, role: role || 'operator', bizId, inviteToken, tenantId: tid },
     });
 
     const frontendUrl = process.env.FRONTEND_URL || 'https://kboos-production.up.railway.app';

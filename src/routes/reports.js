@@ -19,8 +19,9 @@ router.post('/send-now/:bizId', requireAuth, async (req, res, next) => {
 // POST /reports/send-all — trigger for all businesses with client users
 router.post('/send-all', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const bizIds = await prisma.user.findMany({
-      where: { role: 'client', bizId: { not: null } },
+      where: { role: 'client', bizId: { not: null }, tenantId: tid },
       select: { bizId: true },
       distinct: ['bizId'],
     });

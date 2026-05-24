@@ -37,10 +37,12 @@ async function getLiveUsdRmRate() {
   }
 }
 
-async function getWallet() {
+async function getWallet(tid) {
+  const existing = await prisma.wallet.findFirst({ where: { tenantId: tid } });
+  if (existing) return existing;
   return prisma.wallet.upsert({
     where: { id: 'global' },
-    create: { id: 'global', balance: 0 },
+    create: { id: tid, tenantId: tid, balance: 0 },
     update: {},
   });
 }
@@ -54,8 +56,10 @@ router.get('/fx-rate', requireAuth, async (req, res, next) => {
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const wallet = await getWallet();
+    const tid = req.user.tenantId;
+    const wallet = await getWallet(tid);
     const transactions = await prisma.walletTransaction.findMany({
+      where: { tenantId: tid },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -75,9 +79,10 @@ router.post('/topup/initiate', requireAdmin, async (req, res, next) => {
       return res.status(400).json({ error: 'Billplz API key and Collection ID not configured in Settings → API Keys' });
     }
 
+    const tid = req.user.tenantId;
     const amountSen = Math.round(amount * 100);
     const tx = await prisma.walletTransaction.create({
-      data: { type: 'topup', amountSen, note: `Top-up RM ${amount.toFixed(2)}`, status: 'pending' },
+      data: { type: 'topup', amountSen, note: `Top-up RM ${amount.toFixed(2)}`, status: 'pending', tenantId: tid },
     });
 
     const callbackUrl = `${process.env.APP_URL}/wallet/webhook`;
@@ -146,11 +151,17 @@ router.post('/webhook', async (req, res, next) => {
     const tx = await prisma.walletTransaction.findUnique({ where: { billplzId } });
     if (!tx || tx.status === 'paid') return res.json({ ok: true });
 
+    const walletWhere = tx.tenantId
+      ? { tenantId: tx.tenantId }
+      : { id: 'global' };
+    const existingWallet = await prisma.wallet.findFirst({ where: walletWhere });
+    const walletId = existingWallet?.id || (tx.tenantId || 'global');
+
     await prisma.$transaction([
       prisma.walletTransaction.update({ where: { billplzId }, data: { status: 'paid' } }),
       prisma.wallet.upsert({
-        where: { id: 'global' },
-        create: { id: 'global', balance: tx.amountSen },
+        where: { id: walletId },
+        create: { id: walletId, ...(tx.tenantId ? { tenantId: tx.tenantId } : {}), balance: tx.amountSen },
         update: { balance: { increment: tx.amountSen } },
       }),
     ]);
@@ -167,6 +178,7 @@ const SG_PER_EMAIL = 0.0004;
 
 router.get('/spend-summary', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const now = new Date();
     const allTime = req.query.all === '1';
     const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -179,20 +191,20 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
 
     // Claude — exact from ApiUsageLog (real token costs)
     const claudeLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'claude', ...dateFilter('createdAt') },
+      where: { service: 'claude', tenantId: tid, ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
       _count: { id: true },
     });
 
     const scraperLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'outscraper', ...dateFilter('createdAt') },
+      where: { service: 'outscraper', tenantId: tid, ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
     });
 
     const [emailCount, waCount, enrichedCount] = await Promise.all([
-      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', ...dateFilter('sentAt') } }),
-      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', ...dateFilter('sentAt') } }),
-      prisma.lead.count({ where: { enriched: true, ...dateFilter('enrichedAt') } }),
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', tenantId: tid, ...dateFilter('sentAt') } }),
+      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', tenantId: tid, ...dateFilter('sentAt') } }),
+      prisma.lead.count({ where: { enriched: true, tenantId: tid, ...dateFilter('enrichedAt') } }),
     ]);
 
     // Vapi — fetch real call costs from their API

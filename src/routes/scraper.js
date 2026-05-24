@@ -11,12 +11,13 @@ const prisma = new PrismaClient();
 // Blocks until scrape completes and leads are saved. Returns { count, leads }.
 router.post('/google-maps', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, keyword, city, radius = 10, limit = 50 } = req.body;
     if (!campaignId || !keyword || !city) {
       return res.status(400).json({ error: 'campaignId, keyword and city are required' });
     }
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId), tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const query = `${keyword} in ${city}, Malaysia`;
@@ -26,21 +27,22 @@ router.post('/google-maps', requireAuth, async (req, res, next) => {
 
     // Deduplicate by phone number (skip if phone already exists in this campaign)
     const existing = await prisma.lead.findMany({
-      where: { campaignId: parseInt(campaignId) },
+      where: { campaignId: parseInt(campaignId), tenantId: tid },
       select: { phone: true },
     });
     const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
 
     const toInsert = places
       .map(place => mapPlaceToLead({ place, campaignId: parseInt(campaignId), bizId: campaign.bizId }))
-      .filter(lead => !lead.phone || !existingPhones.has(lead.phone));
+      .filter(lead => !lead.phone || !existingPhones.has(lead.phone))
+      .map(lead => ({ ...lead, tenantId: tid }));
 
     if (!toInsert.length) return res.json({ count: 0, leads: [], msg: 'All leads already exist' });
 
     await prisma.lead.createMany({ data: toInsert });
 
     // Update campaign lead count
-    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
     await prisma.campaign.update({
       where: { id: parseInt(campaignId) },
       data: { leads: newTotal },
@@ -51,6 +53,7 @@ router.post('/google-maps', requireAuth, async (req, res, next) => {
         color: 'green',
         msg: `Scraped ${toInsert.length} leads from Google Maps for ${campaign.name}`,
         tag: 'Scraper',
+        tenantId: tid,
       },
     });
 
@@ -62,6 +65,7 @@ router.post('/google-maps', requireAuth, async (req, res, next) => {
 // Body: { campaignId, jobTitles, seniority, city, limit }
 router.post('/apollo', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, jobTitles = [], seniority = [], city, limit = 50 } = req.body;
     if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
 
@@ -69,7 +73,7 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
     const apolloKey = await getApiKey('apollo');
     if (!apolloKey) return res.status(400).json({ error: 'Apollo API key not configured' });
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId), tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const body = {
@@ -103,7 +107,7 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
     if (!people.length) return res.json({ count: 0, leads: [] });
 
     const existing = await prisma.lead.findMany({
-      where: { campaignId: parseInt(campaignId) },
+      where: { campaignId: parseInt(campaignId), tenantId: tid },
       select: { name: true, company: true },
     });
     const existingKeys = new Set(existing.map(l => `${l.name}|${l.company}`));
@@ -113,6 +117,7 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
       .map(p => ({
         campaignId: parseInt(campaignId),
         bizId: campaign.bizId,
+        tenantId: tid,
         name: p.name || 'Unknown',
         company: p.organization?.name || '',
         title: p.title || '',
@@ -129,7 +134,7 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
     if (!toInsert.length) return res.json({ count: 0, leads: [], msg: 'All leads already exist' });
 
     await prisma.lead.createMany({ data: toInsert });
-    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
     await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: newTotal } });
 
     await prisma.activity.create({
@@ -137,6 +142,7 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
         color: 'blue',
         msg: `Imported ${toInsert.length} Apollo contacts for ${campaign.name}`,
         tag: 'Scraper',
+        tenantId: tid,
       },
     });
 
@@ -147,10 +153,11 @@ router.post('/apollo', requireAuth, async (req, res, next) => {
 // POST /scraper/parallel — run Google Maps + Apollo simultaneously, merge results
 router.post('/parallel', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, keyword, city, radius = 10, limit = 100, jobTitles = [], seniority = [] } = req.body;
     if (!campaignId || !city) return res.status(400).json({ error: 'campaignId and city required' });
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId), tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     function norm(s) {
@@ -216,6 +223,7 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
     const apolloOnlyLeads = Object.values(apolloMap).map(p => ({
       campaignId: parseInt(campaignId),
       bizId: campaign.bizId,
+      tenantId: tid,
       name: p.name || 'Unknown',
       company: p.organization?.name || '',
       title: p.title || '',
@@ -234,7 +242,7 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
 
     // Deduplicate against existing leads
     const existing = await prisma.lead.findMany({
-      where: { campaignId: parseInt(campaignId) },
+      where: { campaignId: parseInt(campaignId), tenantId: tid },
       select: { phone: true, email: true },
     });
     const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
@@ -249,8 +257,10 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
       return res.json({ count: 0, total: campaign.leads, gmaps: gmapsPlaces.length, apollo: apolloPeople.length, merged: 0 });
     }
 
-    await prisma.lead.createMany({ data: toInsert });
-    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    // Ensure all inserted leads carry tenantId
+    const toInsertWithTenant = toInsert.map(l => ({ ...l, tenantId: tid }));
+    await prisma.lead.createMany({ data: toInsertWithTenant });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
     await prisma.campaign.update({
       where: { id: parseInt(campaignId) },
       data: { leads: newTotal, status: 'awaiting_approval' },
@@ -261,6 +271,7 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
         color: 'green',
         msg: `Scraped ${toInsert.length} leads for "${campaign.name}" (${gmapsPlaces.length} Maps + ${apolloPeople.length} Apollo)`,
         tag: 'Scraper',
+        tenantId: tid,
       },
     }).catch(() => {});
 
@@ -268,7 +279,7 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
     setImmediate(async () => {
       try {
         const { createLeadsSheet } = await import('../services/googleDrive.js');
-        const leads = await prisma.lead.findMany({ where: { campaignId: parseInt(campaignId) } });
+        const leads = await prisma.lead.findMany({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
         const sheet = await createLeadsSheet({ campaignName: campaign.name, leads });
         await prisma.campaign.update({
           where: { id: parseInt(campaignId) },
@@ -439,15 +450,16 @@ router.post('/smart-preview', requireAuth, async (req, res, next) => {
 // POST /scraper/import-selected — save chosen preview leads to a campaign
 router.post('/import-selected', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, leads: selectedLeads = [] } = req.body;
     if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
     if (!selectedLeads.length) return res.status(400).json({ error: 'No leads provided' });
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId), tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const existing = await prisma.lead.findMany({
-      where: { campaignId: parseInt(campaignId) },
+      where: { campaignId: parseInt(campaignId), tenantId: tid },
       select: { phone: true, email: true },
     });
     const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
@@ -458,6 +470,7 @@ router.post('/import-selected', requireAuth, async (req, res, next) => {
       .map(l => ({
         campaignId: parseInt(campaignId),
         bizId: campaign.bizId,
+        tenantId: tid,
         name: l.name || 'Unknown',
         company: l.company || '',
         title: l.title || '',
@@ -475,9 +488,9 @@ router.post('/import-selected', requireAuth, async (req, res, next) => {
     if (!toInsert.length) return res.json({ count: 0, total: campaign.leads, msg: 'All selected leads already exist' });
 
     await prisma.lead.createMany({ data: toInsert });
-    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
     await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: newTotal } });
-    await prisma.activity.create({ data: { color: 'green', msg: `Imported ${toInsert.length} leads to "${campaign.name}"`, tag: 'Scraper' } }).catch(() => {});
+    await prisma.activity.create({ data: { color: 'green', msg: `Imported ${toInsert.length} leads to "${campaign.name}"`, tag: 'Scraper', tenantId: tid } }).catch(() => {});
 
     res.json({ count: toInsert.length, total: newTotal });
   } catch (e) { next(e); }

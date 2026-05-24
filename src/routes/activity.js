@@ -6,11 +6,17 @@ const router = Router();
 const prisma = new PrismaClient();
 
 router.get('/', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.activity.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    res.json(await prisma.activity.findMany({ where: { tenantId: tid }, orderBy: { createdAt: 'desc' }, take: 50 }));
+  } catch (e) { next(e); }
 });
 
 router.post('/', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.activity.create({ data: req.body })); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    res.json(await prisma.activity.create({ data: { ...req.body, tenantId: tid } }));
+  } catch (e) { next(e); }
 });
 
 export default router;
