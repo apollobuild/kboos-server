@@ -852,9 +852,10 @@ Return JSON:
 }
 
 export async function generateWASequence({ goal, steps = 3, tenantConfig = {} }) {
-  const { anthropic, model } = await getClient();
+  const client = await getClient();
+  const model = 'claude-sonnet-4-6';
   const market = getMarketName(tenantConfig.country);
-  const msg = await anthropic.messages.create({
+  const msg = await client.messages.create({
     model,
     max_tokens: 1200,
     messages: [{
