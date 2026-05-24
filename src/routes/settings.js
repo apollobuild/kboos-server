@@ -73,7 +73,7 @@ router.get('/users', requireAdmin, async (req, res, next) => {
     const tid = req.user.tenantId;
     const users = await prisma.user.findMany({
       where: { tenantId: tid },
-      select: { id: true, email: true, name: true, role: true, bizId: true, createdAt: true, lastLoginAt: true, inviteToken: true },
+      select: { id: true, email: true, name: true, role: true, bizId: true, createdAt: true, lastLoginAt: true, lastActiveAt: true, inviteToken: true },
       orderBy: { createdAt: 'asc' },
     });
     res.json(users.map(u => ({ ...u, pending: !!u.inviteToken, inviteToken: undefined })));

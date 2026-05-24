@@ -1,4 +1,10 @@
 import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+// Throttle: only write to DB once per 30s per user to avoid hammering on every request
+const lastActiveThrottle = new Map();
 
 export function requireAuth(req, res, next) {
   const header = req.headers.authorization;
@@ -7,6 +13,13 @@ export function requireAuth(req, res, next) {
   }
   try {
     req.user = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    // Fire-and-forget: update lastActiveAt at most once every 30 seconds per user
+    const uid = req.user.id;
+    const now = Date.now();
+    if (!lastActiveThrottle.has(uid) || now - lastActiveThrottle.get(uid) > 30_000) {
+      lastActiveThrottle.set(uid, now);
+      prisma.user.update({ where: { id: uid }, data: { lastActiveAt: new Date() } }).catch(() => {});
+    }
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

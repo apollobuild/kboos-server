@@ -32,6 +32,7 @@ model User {
   bizId         String?
   inviteToken   String?   @unique
   lastLoginAt   DateTime?
+  lastActiveAt  DateTime?
   createdAt     DateTime  @default(now())
 
   @@index([tenantId])
