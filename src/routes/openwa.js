@@ -68,10 +68,14 @@ router.post('/sessions', requireAdmin, async (req, res, next) => {
 
 router.patch('/sessions/:id', requireAdmin, async (req, res, next) => {
   try {
-    const { label, dailyLimit } = req.body;
+    const { label, dailyLimit, healthScore } = req.body;
     const session = await prisma.openWASession.update({
       where: { id: req.params.id },
-      data: { ...(label ? { label } : {}), ...(dailyLimit ? { dailyLimit: parseInt(dailyLimit) } : {}) },
+      data: {
+        ...(label ? { label } : {}),
+        ...(dailyLimit ? { dailyLimit: parseInt(dailyLimit) } : {}),
+        ...(healthScore !== undefined ? { healthScore: parseInt(healthScore) } : {}),
+      },
     });
     res.json(session);
   } catch (e) { next(e); }
