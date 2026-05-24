@@ -295,6 +295,42 @@ function isMalaysianMobile(phone) {
   return /^601[0-9]{8,9}$/.test(cleaned) || /^01[0-9]{8,9}$/.test(cleaned);
 }
 
+async function apolloPaginatedFetch({ apolloKey, city, seniority, jobTitles, limit }) {
+  const cap = Math.min(limit, 1000);
+  const allPeople = [];
+  let page = 1;
+  while (allPeople.length < cap) {
+    const remaining = cap - allPeople.length;
+    const r = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'X-Api-Key': apolloKey },
+      body: JSON.stringify({
+        q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
+        person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
+        person_titles: jobTitles.length ? jobTitles : undefined,
+        per_page: Math.min(remaining, 100),
+        page,
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      let msg = t; try { msg = JSON.parse(t).error || t; } catch {}
+      throw new Error(`Apollo: ${msg}`);
+    }
+    const batch = (await r.json()).people || [];
+    allPeople.push(...batch);
+    if (batch.length < Math.min(remaining, 100)) break;
+    page++;
+  }
+  const seen = new Set();
+  return allPeople.filter(p => {
+    const key = `${p.name}|${p.organization?.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // POST /scraper/apollo-preview
 router.post('/apollo-preview', requireAuth, async (req, res, next) => {
   try {
@@ -303,23 +339,7 @@ router.post('/apollo-preview', requireAuth, async (req, res, next) => {
     const apolloKey = await getApiKey('apollo');
     if (!apolloKey) return res.status(400).json({ error: 'Apollo API key not configured in Settings' });
 
-    const apolloRes = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'X-Api-Key': apolloKey },
-      body: JSON.stringify({
-        q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
-        person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
-        person_titles: jobTitles.length ? jobTitles : undefined,
-        per_page: Math.min(limit, 100),
-        page: 1,
-      }),
-    });
-    if (!apolloRes.ok) {
-      const t = await apolloRes.text();
-      let msg = t; try { msg = JSON.parse(t).error || t; } catch {}
-      throw new Error(`Apollo: ${msg}`);
-    }
-    const people = (await apolloRes.json()).people || [];
+    const people = await apolloPaginatedFetch({ apolloKey, city, seniority, jobTitles, limit });
     const leads = people.map(p => ({
       name: p.name || 'Unknown',
       company: p.organization?.name || '',
@@ -332,7 +352,7 @@ router.post('/apollo-preview', requireAuth, async (req, res, next) => {
       source: 'apollo',
       hasMobile: isMalaysianMobile(p.phone_number),
     }));
-    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length });
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length, requested: Math.min(limit, 1000) });
   } catch (e) { next(e); }
 });
 
@@ -341,7 +361,7 @@ router.post('/maps-preview', requireAuth, async (req, res, next) => {
   try {
     const { keyword, city, limit = 50 } = req.body;
     if (!keyword || !city) return res.status(400).json({ error: 'keyword and city are required' });
-    const places = await searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 100) });
+    const places = await searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 1000) });
     const leads = places.map(place => {
       const l = mapPlaceToLead({ place, campaignId: 0, bizId: '' });
       return {
@@ -357,7 +377,7 @@ router.post('/maps-preview', requireAuth, async (req, res, next) => {
         hasMobile: isMalaysianMobile(l.phone),
       };
     });
-    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length });
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length, requested: Math.min(limit, 1000) });
   } catch (e) { next(e); }
 });
 
@@ -375,25 +395,13 @@ router.post('/smart-preview', requireAuth, async (req, res, next) => {
 
     const [gmapsResult, apolloResult] = await Promise.allSettled([
       keyword
-        ? searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 300) })
+        ? searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 1000) })
         : Promise.resolve([]),
       (async () => {
         const { getApiKey } = await import('../services/apiKeys.js');
         const apolloKey = await getApiKey('apollo');
         if (!apolloKey) return [];
-        const r = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Api-Key': apolloKey },
-          body: JSON.stringify({
-            q_organization_locations: [`${city}, Malaysia`],
-            person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
-            person_titles: jobTitles.length ? jobTitles : undefined,
-            per_page: Math.min(limit, 100),
-            page: 1,
-          }),
-        });
-        if (!r.ok) return [];
-        return (await r.json()).people || [];
+        return apolloPaginatedFetch({ apolloKey, city, seniority, jobTitles, limit });
       })(),
     ]);
 
@@ -424,7 +432,7 @@ router.post('/smart-preview', requireAuth, async (req, res, next) => {
       leads.push({ name: p.name || 'Unknown', company: p.organization?.name || '', title: p.title || '', phone, email: p.email || '', website: p.organization?.website_url || '', address: p.city ? `${p.city}, Malaysia` : '', score: 40, source: 'apollo', hasMobile: isMalaysianMobile(phone) });
     }
 
-    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length, gmaps: gmapsPlaces.length, apollo: apolloPeople.length, merged: leads.filter(l => l.score === 60).length });
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length, gmaps: gmapsPlaces.length, apollo: apolloPeople.length, merged: leads.filter(l => l.score === 60).length, requested: Math.min(limit, 1000) });
   } catch (e) { next(e); }
 });
 
