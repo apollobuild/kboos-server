@@ -66,6 +66,75 @@ router.patch('/bulk', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// PATCH /leads/bulk-assign — reassign leads to a different campaign
+router.patch('/bulk-assign', requireAuth, async (req, res, next) => {
+  try {
+    const { ids, campaignId } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+    if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    await prisma.lead.updateMany({
+      where: { id: { in: ids.map(Number) } },
+      data: { campaignId: parseInt(campaignId), bizId: campaign.bizId, status: 'new' },
+    });
+
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: newTotal } });
+    await prisma.activity.create({ data: { color: 'blue', msg: `${ids.length} leads assigned to "${campaign.name}"`, tag: 'Leads' } }).catch(() => {});
+
+    res.json({ ok: true, count: ids.length });
+  } catch (e) { next(e); }
+});
+
+// POST /leads/bulk-enrich — enrich leads via Apollo (fills email, title, phone)
+router.post('/bulk-enrich', requireAuth, async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+
+    const { enrichLead } = await import('../services/apollo.js');
+    const leads = await prisma.lead.findMany({
+      where: { id: { in: ids.map(Number) } },
+      select: { id: true, company: true, address: true, email: true, title: true, phone: true },
+    });
+
+    let enriched = 0;
+    const BATCH = 5;
+    for (let i = 0; i < leads.length; i += BATCH) {
+      await Promise.allSettled(leads.slice(i, i + BATCH).map(async lead => {
+        if (!lead.company) return;
+        const city = lead.address?.split(',')[0]?.trim() || null;
+        const result = await enrichLead({ companyName: lead.company, city }).catch(() => null);
+        if (!result) return;
+        const patch = { enriched: true };
+        if (!lead.email  && result.email) patch.email = result.email;
+        if (!lead.title  && result.title) patch.title = result.title;
+        if (!lead.phone  && result.phone) {
+          patch.phone = result.phone;
+          patch.channels = { push: 'whatsapp' };
+        }
+        await prisma.lead.update({ where: { id: lead.id }, data: patch });
+        enriched++;
+      }));
+    }
+
+    res.json({ enriched, total: leads.length });
+  } catch (e) { next(e); }
+});
+
+// DELETE /leads/bulk — delete multiple leads by id
+router.delete('/bulk', requireAuth, async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+    await prisma.lead.deleteMany({ where: { id: { in: ids.map(Number) } } });
+    res.json({ ok: true, count: ids.length });
+  } catch (e) { next(e); }
+});
+
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
     const lead = await prisma.lead.update({ where: { id: parseInt(req.params.id) }, data: req.body });

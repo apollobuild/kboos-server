@@ -53,6 +53,7 @@ export async function enrichLead({ companyName, city }) {
     decisionMakerName: p.name || null,
     email: p.email || null,
     title: p.title || null,
+    phone: p.phone_number || null,
   };
 }
 
