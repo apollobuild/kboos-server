@@ -1,10 +1,17 @@
 import { getApiKey } from './apiKeys.js';
 
+function normalizeUrl(raw) {
+  const trimmed = (raw || '').trim().replace(/\/$/, '');
+  const withProto = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
+  // Upgrade http:// → https:// for non-local URLs (Railway, etc.)
+  const isLocal = /localhost|127\.0\.0\.1|192\.168\./.test(withProto);
+  return (!isLocal && withProto.startsWith('http://')) ? withProto.replace('http://', 'https://') : withProto;
+}
+
 async function getConfig() {
   const url = await getApiKey('openwa_url');
   const key = await getApiKey('openwa_key');
-  const raw = (url || 'http://localhost:2785').replace(/\/$/, '');
-  const baseUrl = raw.startsWith('http') ? raw : `https://${raw}`;
+  const baseUrl = normalizeUrl(url || 'http://localhost:2785');
   return { baseUrl, apiKey: key || '' };
 }
 

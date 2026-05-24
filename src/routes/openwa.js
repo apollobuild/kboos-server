@@ -22,7 +22,9 @@ router.post('/config', requireAdmin, async (req, res, next) => {
     const { url, apiKey } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
     const raw = url.trim().replace(/\/$/, '');
-    const normalized = raw.startsWith('http') ? raw : `https://${raw}`;
+    const withProto = raw.startsWith('http') ? raw : `https://${raw}`;
+    const isLocal = /localhost|127\.0\.0\.1/.test(withProto);
+    const normalized = (!isLocal && withProto.startsWith('http://')) ? withProto.replace('http://', 'https://') : withProto;
     await saveApiKey('openwa_url', normalized);
     if (apiKey) await saveApiKey('openwa_key', apiKey);
     res.json({ ok: true });
