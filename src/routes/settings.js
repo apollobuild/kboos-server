@@ -378,4 +378,30 @@ router.post('/auto-reply', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /settings/report-config
+router.get('/report-config', requireAuth, async (req, res, next) => {
+  try {
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const notif = s?.notifications || {};
+    res.json(notif.weeklyReport || { enabled: false, includeTeam: true });
+  } catch (e) { next(e); }
+});
+
+// POST /settings/report-config
+router.post('/report-config', requireAuth, async (req, res, next) => {
+  try {
+    const { enabled, includeTeam } = req.body;
+    const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
+    const notif = s?.notifications || {};
+    const weeklyReport = { enabled: !!enabled, includeTeam: includeTeam !== false };
+    const notifications = { ...notif, weeklyReport };
+    await prisma.appSettings.upsert({
+      where: { id: 'global' },
+      create: { id: 'global', notifications },
+      update: { notifications },
+    });
+    res.json(weeklyReport);
+  } catch (e) { next(e); }
+});
+
 export default router;

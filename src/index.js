@@ -24,6 +24,7 @@ import pipelineRoutes from './routes/pipeline.js';
 import meetingsRoutes from './routes/meetings.js';
 import analyticsRoutes from './routes/analytics.js';
 import searchRoutes from './routes/search.js';
+import reportsRoutes from './routes/reports.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
@@ -95,6 +96,7 @@ app.use('/pipeline', pipelineRoutes);
 app.use('/meetings', meetingsRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/search', searchRoutes);
+app.use('/reports', reportsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -123,6 +125,21 @@ app.listen(PORT, async () => {
   });
   // Meeting reminders — scan every 15 minutes
   cron.schedule('*/15 * * * *', () => scanMeetingReminders());
-  // Startup scan
   setTimeout(() => scanMeetingReminders(), 15000);
+  // Weekly client reports — every Monday at 8am KL (UTC 0am Monday = UTC+8 8am Monday)
+  cron.schedule('0 0 * * 1', async () => {
+    console.log('[WeeklyReport] Monday trigger — queuing reports for all businesses');
+    try {
+      const bizIds = await prisma.user.findMany({
+        where: { role: 'client', bizId: { not: null } },
+        select: { bizId: true }, distinct: ['bizId'],
+      });
+      for (const { bizId } of bizIds) {
+        await enqueue('weekly-report', { bizId }).catch(() => {});
+      }
+      console.log(`[WeeklyReport] Queued ${bizIds.length} report(s)`);
+    } catch (err) {
+      console.error('[WeeklyReport] Cron error:', err.message);
+    }
+  });
 });

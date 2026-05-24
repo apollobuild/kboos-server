@@ -13,6 +13,7 @@ import { handleQualify } from './qualify.js';
 import { handleAiScore } from './aiScore.js';
 import { handleOptimize } from './optimize.js';
 import { handleMeetingNotify } from './meetingNotify.js';
+import { handleWeeklyReport } from './weeklyReport.js';
 
 export async function startWorkers() {
   await registerWorker('lead-validation', 4, handleValidation);
@@ -29,5 +30,6 @@ export async function startWorkers() {
   await registerWorker('optimization-loop', 1, handleOptimize);
   await registerWorker('auto-reply', 3, handleAutoReply);
   await registerWorker('meeting-notify', 2, handleMeetingNotify);
-  console.log('[Workers] All 14 workers registered');
+  await registerWorker('weekly-report', 2, handleWeeklyReport);
+  console.log('[Workers] All 15 workers registered');
 }
