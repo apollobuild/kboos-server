@@ -83,11 +83,11 @@ router.get('/sessions', requireAuth, async (req, res, next) => {
 
 router.post('/sessions', requireAdmin, async (req, res, next) => {
   try {
-    const { label, dailyLimit } = req.body;
+    const { label, phone, dailyLimit } = req.body;
     if (!label) return res.status(400).json({ error: 'Label required' });
     const sessionName = 'default'; // WAHA Core only supports 'default' session name
     const session = await prisma.openWASession.create({
-      data: { tenantId: req.user.tenantId, label, sessionName, dailyLimit: dailyLimit || 200 },
+      data: { tenantId: req.user.tenantId, label, phone: phone || null, sessionName, dailyLimit: dailyLimit || 200 },
     });
     res.json(session);
   } catch (e) { next(e); }
