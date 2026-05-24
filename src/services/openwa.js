@@ -37,20 +37,44 @@ export async function getNamedSessionStatus(sessionName) {
   }
 }
 
-// WAHA API: POST /api/sessions/start  { name }
+// WAHA API: start a session — handles WAHA v1 and v2 APIs, checks existing state first
 export async function startNamedSession(sessionName) {
   const { baseUrl, apiKey } = await getConfig();
   const h = makeHeaders(apiKey);
 
-  // Start session (WAHA uses /api/sessions/start)
-  await fetch(`${baseUrl}/api/sessions/start`, {
+  // Check current state — avoid redundant starts
+  const existing = await getNamedSessionStatus(sessionName);
+  if (existing.status === 'WORKING') return null; // Already connected
+
+  // If QR is already showing, just fetch it
+  if (existing.status === 'SCAN_QR_CODE') {
+    const qr = await getQR(sessionName);
+    if (qr) return qr;
+  }
+
+  // WAHA v2: POST /api/sessions { name, start:true } (preferred)
+  const createRes = await fetch(`${baseUrl}/api/sessions`, {
     method: 'POST',
     headers: h,
-    body: JSON.stringify({ name: sessionName }),
-  });
+    body: JSON.stringify({ name: sessionName, start: true }),
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
 
-  // Poll for QR up to 20s
-  for (let i = 0; i < 20; i++) {
+  // If session already exists in WAHA, start it directly
+  if (!createRes?.ok) {
+    await fetch(`${baseUrl}/api/sessions/${sessionName}/start`, {
+      method: 'POST', headers: h, signal: AbortSignal.timeout(8000),
+    }).catch(() => {});
+    // WAHA v1 fallback
+    await fetch(`${baseUrl}/api/sessions/start`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ name: sessionName }),
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => {});
+  }
+
+  // Poll for QR up to 60s (Railway cold-start can be slow)
+  for (let i = 0; i < 60; i++) {
     await new Promise(r => setTimeout(r, 1000));
     const qr = await getQR(sessionName);
     if (qr) return qr;

@@ -13,7 +13,7 @@ router.get('/config', requireAuth, async (req, res, next) => {
   try {
     const url = await getApiKey('openwa_url');
     const key = await getApiKey('openwa_key');
-    res.json({ configured: !!url, url: url ? url.replace(/^https?:\/\//, '') : '' });
+    res.json({ configured: !!url, url: url || '' });
   } catch (e) { next(e); }
 });
 
@@ -21,7 +21,9 @@ router.post('/config', requireAdmin, async (req, res, next) => {
   try {
     const { url, apiKey } = req.body;
     if (!url) return res.status(400).json({ error: 'URL required' });
-    await saveApiKey('openwa_url', url);
+    const raw = url.trim().replace(/\/$/, '');
+    const normalized = raw.startsWith('http') ? raw : `https://${raw}`;
+    await saveApiKey('openwa_url', normalized);
     if (apiKey) await saveApiKey('openwa_key', apiKey);
     res.json({ ok: true });
   } catch (e) { next(e); }
