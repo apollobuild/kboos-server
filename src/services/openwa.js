@@ -16,64 +16,73 @@ function makeHeaders(apiKey) {
   };
 }
 
-export async function getSessionStatus() {
+export async function getNamedSessionStatus(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
-    const res = await fetch(`${baseUrl}/api/sessions/default`, {
+    const res = await fetch(`${baseUrl}/api/sessions/${sessionName}`, {
       headers: makeHeaders(apiKey),
+      signal: AbortSignal.timeout(4000),
     });
-    if (res.status === 404) return { connected: false, status: 'no_session' };
-    if (!res.ok) return { connected: false, status: 'error' };
+    if (res.status === 404) return { status: 'no_session' };
+    if (!res.ok) return { status: 'error' };
     const data = await res.json();
     return {
-      connected: data.status === 'WORKING',
       status: data.status,
-      name: data.me?.pushname || null,
+      connected: data.status === 'WORKING',
       phone: data.me?.user || null,
+      name: data.me?.pushname || null,
     };
   } catch {
-    return { connected: false, status: 'unreachable' };
+    return { status: 'unreachable' };
   }
 }
 
-export async function startSession() {
+export async function startNamedSession(sessionName) {
   const { baseUrl, apiKey } = await getConfig();
   const h = makeHeaders(apiKey);
 
-  // Create session (ignore 422 if already exists)
+  // Create/start session
   await fetch(`${baseUrl}/api/sessions`, {
     method: 'POST',
     headers: h,
-    body: JSON.stringify({ name: 'default' }),
+    body: JSON.stringify({ name: sessionName }),
   });
+  await fetch(`${baseUrl}/api/sessions/${sessionName}/start`, { method: 'POST', headers: h });
 
-  // Start the session
-  await fetch(`${baseUrl}/api/sessions/default/start`, { method: 'POST', headers: h });
-
-  // Poll for QR code (up to 15s)
+  // Poll for QR up to 15s
   for (let i = 0; i < 15; i++) {
     await new Promise(r => setTimeout(r, 1000));
-    const qrRes = await fetch(`${baseUrl}/api/sessions/default/screenshot`, { headers: h });
-    if (qrRes.ok) {
-      const buf = await qrRes.arrayBuffer();
-      const b64 = Buffer.from(buf).toString('base64');
-      const mime = qrRes.headers.get('content-type') || 'image/png';
-      return { qr: `data:${mime};base64,${b64}` };
-    }
-    // Also try JSON QR endpoint
-    const qrJson = await fetch(`${baseUrl}/api/sessions/default/auth/qr`, { headers: h });
-    if (qrJson.ok) {
-      const d = await qrJson.json();
-      if (d.qr) return { qr: d.qr };
-    }
+    const qr = await getQR(sessionName);
+    if (qr) return qr;
   }
-  throw new Error('QR code not available yet — try refreshing');
+  throw new Error('QR code not ready — try refreshing');
 }
 
-export async function stopSession() {
+export async function getQR(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
-    const res = await fetch(`${baseUrl}/api/sessions/default/stop`, {
+    const h = makeHeaders(apiKey);
+    // Try screenshot endpoint
+    const imgRes = await fetch(`${baseUrl}/api/sessions/${sessionName}/screenshot`, { headers: h, signal: AbortSignal.timeout(3000) });
+    if (imgRes.ok) {
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString('base64');
+      return `data:image/png;base64,${b64}`;
+    }
+    // Try JSON QR endpoint
+    const jsonRes = await fetch(`${baseUrl}/api/sessions/${sessionName}/auth/qr`, { headers: h, signal: AbortSignal.timeout(3000) });
+    if (jsonRes.ok) {
+      const d = await jsonRes.json();
+      return d.qr || null;
+    }
+    return null;
+  } catch { return null; }
+}
+
+export async function stopNamedSession(sessionName) {
+  try {
+    const { baseUrl, apiKey } = await getConfig();
+    const res = await fetch(`${baseUrl}/api/sessions/${sessionName}/stop`, {
       method: 'POST',
       headers: makeHeaders(apiKey),
     });
@@ -81,13 +90,13 @@ export async function stopSession() {
   } catch { return false; }
 }
 
-export async function sendMessage({ phone, message, session = 'default' }) {
+export async function sendMessageToSession(sessionName, phone, message) {
   const { baseUrl, apiKey } = await getConfig();
   const chatId = phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@c.us`;
   const res = await fetch(`${baseUrl}/api/sendText`, {
     method: 'POST',
     headers: makeHeaders(apiKey),
-    body: JSON.stringify({ chatId, text: message, session }),
+    body: JSON.stringify({ chatId, text: message, session: sessionName }),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -105,4 +114,9 @@ export async function testConnection(url, key) {
     });
     return res.ok;
   } catch { return false; }
+}
+
+// Legacy single-session compat
+export async function sendMessage({ phone, message }) {
+  return sendMessageToSession('default', phone, message);
 }

@@ -850,3 +850,36 @@ Return JSON:
   logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_outreach_assets' });
   return parseJSON(msg.content[0].text);
 }
+
+export async function generateWASequence({ goal, steps = 3, tenantConfig = {} }) {
+  const { anthropic, model } = await getClient();
+  const market = getMarketName(tenantConfig.country);
+  const msg = await anthropic.messages.create({
+    model,
+    max_tokens: 1200,
+    messages: [{
+      role: 'user',
+      content: `You are a WhatsApp outreach copywriter. Generate a ${steps}-message follow-up sequence for this goal:
+
+Goal: ${goal}
+Market: ${market || 'general B2B'}
+
+Rules:
+- Each message under 60 words
+- Conversational, not salesy
+- Use {name} for lead name, {company} for company name
+- Space messages over days (suggest delay for each)
+- Each message should feel natural on WhatsApp
+
+Return JSON array:
+[
+  { "day": 1, "label": "Intro", "message": "..." },
+  { "day": 3, "label": "Follow-up", "message": "..." },
+  { "day": 7, "label": "Final", "message": "..." }
+]
+Only return valid JSON, no extra text.`,
+    }],
+  });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_wa_sequence' });
+  return parseJSON(msg.content[0].text);
+}

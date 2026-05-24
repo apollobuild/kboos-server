@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection, generateCampaignFromGoal, analyzeCampaignPerformance, prioritizeLeads, generateSmartFollowup, generateOutreachAssets } from '../services/claude.js';
+import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection, generateCampaignFromGoal, analyzeCampaignPerformance, prioritizeLeads, generateSmartFollowup, generateOutreachAssets, generateWASequence } from '../services/claude.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { getCache, setCache, hashInput } from '../services/aiCache.js';
 import { PrismaClient } from '@prisma/client';
@@ -137,6 +137,21 @@ router.post('/smart-followup', requireAuth, async (req, res, next) => {
     const history = actions.map(a => `Day ${a.stepDay}: ${a.type} — ${a.status}`).join('\n');
 
     const result = await generateSmartFollowup({ lead, campaign: campaign || {}, brief: seq?.brief || {}, history, channel });
+    res.json(result);
+  } catch (e) { next(e); }
+});
+
+// POST /ai/wa-sequence — generate WhatsApp message sequence from a goal
+router.post('/wa-sequence', requireAuth, async (req, res, next) => {
+  try {
+    const { goal, steps = 3 } = req.body;
+    if (!goal) return res.status(400).json({ error: 'goal required' });
+    const key = await hashInput(`wa-seq:${goal}:${steps}`);
+    const cached = await getCache(key);
+    if (cached) return res.json(cached);
+
+    const result = await generateWASequence({ goal, steps });
+    await setCache(key, result, 60);
     res.json(result);
   } catch (e) { next(e); }
 });

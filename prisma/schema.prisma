@@ -457,3 +457,34 @@ model MeetingLog {
   @@index([meetingDate])
   @@index([tenantId])
 }
+
+model OpenWASession {
+  id          String   @id @default(cuid())
+  tenantId    String   @default("default")
+  label       String   @default("WhatsApp Number")
+  sessionName String
+  phone       String?
+  status      String   @default("disconnected")
+  dailyLimit  Int      @default(200)
+  sentToday   Int      @default(0)
+  lastResetAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model WAConnectCampaign {
+  id           Int      @id @default(autoincrement())
+  tenantId     String   @default("default")
+  name         String
+  sessionId    String
+  goal         String   @default("")
+  sequence     Json     @default("[]")
+  leads        Json     @default("[]")
+  sendLimit    Int      @default(50)
+  sentCount    Int      @default(0)
+  status       String   @default("draft")
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+}
