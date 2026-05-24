@@ -15,6 +15,7 @@ function makeHeaders(apiKey) {
   };
 }
 
+// WAHA API: GET /api/sessions/{session}
 export async function getNamedSessionStatus(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
@@ -28,28 +29,28 @@ export async function getNamedSessionStatus(sessionName) {
     return {
       status: data.status,
       connected: data.status === 'WORKING',
-      phone: data.me?.user || null,
-      name: data.me?.pushname || null,
+      phone: data.me?.id?.user || data.me?.user || null,
+      name: data.me?.pushName || data.me?.pushname || null,
     };
   } catch {
     return { status: 'unreachable' };
   }
 }
 
+// WAHA API: POST /api/sessions/start  { name }
 export async function startNamedSession(sessionName) {
   const { baseUrl, apiKey } = await getConfig();
   const h = makeHeaders(apiKey);
 
-  // Create/start session
-  await fetch(`${baseUrl}/api/sessions`, {
+  // Start session (WAHA uses /api/sessions/start)
+  await fetch(`${baseUrl}/api/sessions/start`, {
     method: 'POST',
     headers: h,
     body: JSON.stringify({ name: sessionName }),
   });
-  await fetch(`${baseUrl}/api/sessions/${sessionName}/start`, { method: 'POST', headers: h });
 
-  // Poll for QR up to 15s
-  for (let i = 0; i < 15; i++) {
+  // Poll for QR up to 20s
+  for (let i = 0; i < 20; i++) {
     await new Promise(r => setTimeout(r, 1000));
     const qr = await getQR(sessionName);
     if (qr) return qr;
@@ -57,38 +58,50 @@ export async function startNamedSession(sessionName) {
   throw new Error('QR code not ready — try refreshing');
 }
 
+// WAHA API: GET /api/{session}/auth/qr  or  GET /api/screenshot?session={session}
 export async function getQR(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
     const h = makeHeaders(apiKey);
-    // Try screenshot endpoint
-    const imgRes = await fetch(`${baseUrl}/api/sessions/${sessionName}/screenshot`, { headers: h, signal: AbortSignal.timeout(3000) });
-    if (imgRes.ok) {
-      const buf = await imgRes.arrayBuffer();
-      const b64 = Buffer.from(buf).toString('base64');
-      return `data:image/png;base64,${b64}`;
-    }
-    // Try JSON QR endpoint
-    const jsonRes = await fetch(`${baseUrl}/api/sessions/${sessionName}/auth/qr`, { headers: h, signal: AbortSignal.timeout(3000) });
+
+    // Try WAHA QR JSON endpoint first
+    const jsonRes = await fetch(`${baseUrl}/api/${sessionName}/auth/qr`, { headers: h, signal: AbortSignal.timeout(4000) });
     if (jsonRes.ok) {
       const d = await jsonRes.json();
-      return d.qr || null;
+      // WAHA returns { value: "data:image/png;base64,..." }
+      if (d.value) return d.value;
+      if (d.qr) return d.qr;
+    }
+
+    // Fallback: screenshot endpoint GET /api/screenshot?session=name
+    const imgRes = await fetch(`${baseUrl}/api/screenshot?session=${sessionName}`, { headers: h, signal: AbortSignal.timeout(4000) });
+    if (imgRes.ok) {
+      const ct = imgRes.headers.get('content-type') || '';
+      if (ct.includes('image')) {
+        const buf = await imgRes.arrayBuffer();
+        return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
+      }
+      const d = await imgRes.json().catch(() => null);
+      if (d?.value) return d.value;
     }
     return null;
   } catch { return null; }
 }
 
+// WAHA API: POST /api/sessions/stop  { name }
 export async function stopNamedSession(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
-    const res = await fetch(`${baseUrl}/api/sessions/${sessionName}/stop`, {
+    const res = await fetch(`${baseUrl}/api/sessions/stop`, {
       method: 'POST',
       headers: makeHeaders(apiKey),
+      body: JSON.stringify({ name: sessionName }),
     });
     return res.ok;
   } catch { return false; }
 }
 
+// WAHA API: POST /api/sendText  { chatId, text, session }
 export async function sendMessageToSession(sessionName, phone, message) {
   const { baseUrl, apiKey } = await getConfig();
   const chatId = phone.includes('@') ? phone : `${phone.replace(/\D/g, '')}@c.us`;
@@ -99,14 +112,15 @@ export async function sendMessageToSession(sessionName, phone, message) {
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`OpenWA: ${err}`);
+    throw new Error(`WAHA: ${err}`);
   }
   return res.json();
 }
 
 export async function testConnection(url, key) {
   try {
-    const base = (url || 'http://localhost:2785').replace(/\/$/, '');
+    const raw = (url || '').replace(/\/$/, '');
+    const base = raw.startsWith('http') ? raw : `https://${raw}`;
     const res = await fetch(`${base}/api/sessions`, {
       headers: makeHeaders(key || ''),
       signal: AbortSignal.timeout(5000),
