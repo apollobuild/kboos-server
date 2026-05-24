@@ -23,6 +23,7 @@ import sequenceRoutes from './routes/sequences.js';
 import pipelineRoutes from './routes/pipeline.js';
 import meetingsRoutes from './routes/meetings.js';
 import analyticsRoutes from './routes/analytics.js';
+import searchRoutes from './routes/search.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
@@ -60,6 +61,7 @@ app.use('/sequences', sequenceRoutes);
 app.use('/pipeline', pipelineRoutes);
 app.use('/meetings', meetingsRoutes);
 app.use('/analytics', analyticsRoutes);
+app.use('/search', searchRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
