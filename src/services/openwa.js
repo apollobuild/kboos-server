@@ -3,10 +3,9 @@ import { getApiKey } from './apiKeys.js';
 async function getConfig() {
   const url = await getApiKey('openwa_url');
   const key = await getApiKey('openwa_key');
-  return {
-    baseUrl: (url || 'http://localhost:2785').replace(/\/$/, ''),
-    apiKey: key || '',
-  };
+  const raw = (url || 'http://localhost:2785').replace(/\/$/, '');
+  const baseUrl = raw.startsWith('http') ? raw : `https://${raw}`;
+  return { baseUrl, apiKey: key || '' };
 }
 
 function makeHeaders(apiKey) {
