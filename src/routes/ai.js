@@ -147,11 +147,11 @@ router.post('/wa-sequence', requireAuth, async (req, res, next) => {
     const { goal, steps = 3 } = req.body;
     if (!goal) return res.status(400).json({ error: 'goal required' });
     const key = await hashInput(`wa-seq:${goal}:${steps}`);
-    const cached = await getCache(key);
+    const cached = await getCache('wa-sequence', 'global', 'sequence', key);
     if (cached) return res.json(cached);
 
     const result = await generateWASequence({ goal, steps });
-    await setCache(key, result, 60);
+    await setCache('wa-sequence', 'global', 'sequence', result, key, 60);
     res.json(result);
   } catch (e) { next(e); }
 });
