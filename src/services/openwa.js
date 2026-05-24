@@ -120,3 +120,33 @@ export async function testConnection(url, key) {
 export async function sendMessage({ phone, message }) {
   return sendMessageToSession('default', phone, message);
 }
+
+const STOP_WORDS = ['stop', 'unsubscribe', 'opt out', 'remove me', 'don\'t contact', 'do not contact', 'berhenti', 'tak nak', 'no thanks', 'not interested', 'buang'];
+
+export function isStopWord(text) {
+  const lower = text.toLowerCase().trim();
+  return STOP_WORDS.some(w => lower.includes(w));
+}
+
+export function isBusinessHours() {
+  const now = new Date();
+  // Convert to UTC+8 (KL/SG time)
+  const utc8 = new Date(now.getTime() + 8 * 3600000);
+  const day = utc8.getUTCDay(); // 0=Sun, 6=Sat
+  const hour = utc8.getUTCHours();
+  return day >= 1 && day <= 5 && hour >= 9 && hour < 18;
+}
+
+// Warmup: returns effective daily limit based on warmup week
+export function getWarmupLimit(week) {
+  const limits = [20, 50, 100, 150, 200];
+  return limits[Math.min(week, limits.length - 1)];
+}
+
+export async function sendWithSafetyChecks(sessionName, phone, message) {
+  // Only send during business hours
+  if (!isBusinessHours()) {
+    throw new Error('Outside business hours (9am–6pm Mon–Fri)');
+  }
+  return sendMessageToSession(sessionName, phone, message);
+}

@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { sendMessageToSession, getWarmupLimit } from './services/openwa.js';
 
 import authRoutes from './routes/auth.js';
 import businessRoutes from './routes/businesses.js';
@@ -63,6 +64,69 @@ async function scanMeetingReminders() {
     if (upcoming.length > 0) console.log(`[Meetings] Scanned ${upcoming.length} upcoming meetings`);
   } catch (err) {
     console.error('[Meetings] Reminder scan error:', err.message);
+  }
+}
+
+async function runWASequenceStep() {
+  try {
+    const campaigns = await prisma.wAConnectCampaign.findMany({
+      where: { status: 'active' },
+    });
+    for (const c of campaigns) {
+      const seq = Array.isArray(c.sequence) ? c.sequence : [];
+      const currentStep = c.currentStep || 1;
+      if (currentStep >= seq.length) continue; // all steps done
+
+      const nextStep = seq[currentStep]; // 0-indexed
+      if (!nextStep) continue;
+
+      const statuses = Array.isArray(c.leadStatuses) ? c.leadStatuses : [];
+      const leads = Array.isArray(c.leads) ? c.leads : [];
+
+      // Find leads who completed step currentStep but not currentStep+1
+      // and whose last send was >= nextStep.day days ago
+      const now = Date.now();
+      const due = statuses.filter(s => {
+        if (s.optedOut) return false;
+        if (s.step >= currentStep + 1) return false;
+        if (s.step < currentStep) return false;
+        const daysSince = (now - new Date(s.sentAt).getTime()) / 86400000;
+        return daysSince >= (nextStep.day - (seq[currentStep - 1]?.day || 1));
+      });
+
+      if (due.length === 0) continue;
+
+      // Get session
+      const session = await prisma.openWASession.findUnique({ where: { id: c.sessionId } }).catch(() => null);
+      if (!session || session.status !== 'connected') continue;
+
+      // Send next step to due leads (up to daily remaining)
+      const eff = session.warmupEnabled ? getWarmupLimit(session.warmupWeek) : session.dailyLimit;
+      const remaining = eff - session.sentToday;
+      const toSend = due.slice(0, Math.min(remaining, c.sendLimit));
+
+      let sent = 0;
+      for (const leadStatus of toSend) {
+        const lead = leads.find(l => l.phone === leadStatus.phone);
+        if (!lead) continue;
+        const msg = (nextStep.message || '').replace(/\{name\}/gi, lead.name || '').replace(/\{company\}/gi, lead.company || '').replace(/\{first_name\}/gi, (lead.name || '').split(' ')[0]);
+        try {
+          await sendMessageToSession(session.sessionName, lead.phone, msg);
+          const idx = statuses.findIndex(s => s.phone === lead.phone);
+          if (idx >= 0) statuses[idx] = { ...statuses[idx], step: currentStep + 1, sentAt: new Date().toISOString() };
+          sent++;
+          await new Promise(r => setTimeout(r, 30000));
+        } catch { }
+      }
+
+      if (sent > 0) {
+        await prisma.openWASession.update({ where: { id: session.id }, data: { sentToday: { increment: sent } } });
+        await prisma.wAConnectCampaign.update({ where: { id: c.id }, data: { leadStatuses: statuses } });
+        console.log(`[WA Sequence] Campaign ${c.id} step ${currentStep + 1}: sent ${sent}`);
+      }
+    }
+  } catch (err) {
+    console.error('[WA Sequence] Error:', err.message);
   }
 }
 
@@ -130,6 +194,10 @@ app.listen(PORT, async () => {
   // Meeting reminders — scan every 15 minutes
   cron.schedule('*/15 * * * *', () => scanMeetingReminders());
   setTimeout(() => scanMeetingReminders(), 15000);
+  // WA Connect sequence scheduler — runs every 2 hours
+  cron.schedule('0 */2 * * *', () => {
+    runWASequenceStep().catch(err => console.error('[WA Sequence] Cron error:', err.message));
+  });
   // Weekly client reports — every Monday at 8am KL (UTC 0am Monday = UTC+8 8am Monday)
   cron.schedule('0 0 * * 1', async () => {
     console.log('[WeeklyReport] Monday trigger — queuing reports for all businesses');

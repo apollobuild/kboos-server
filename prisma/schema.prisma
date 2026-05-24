@@ -469,6 +469,11 @@ model OpenWASession {
   sentToday   Int      @default(0)
   lastResetAt DateTime @default(now())
   createdAt   DateTime @default(now())
+  warmupEnabled Boolean @default(false)
+  warmupWeek    Int     @default(0)
+  healthScore   Int     @default(100)
+  errorCount    Int     @default(0)
+  optOutCount   Int     @default(0)
 
   @@index([tenantId])
 }
@@ -485,6 +490,12 @@ model WAConnectCampaign {
   sentCount    Int      @default(0)
   status       String   @default("draft")
   createdAt    DateTime @default(now())
+  sequenceSteps Int     @default(3)
+  abVariantB    Json    @default("[]")
+  abEnabled     Boolean @default(false)
+  analytics     Json    @default("{}")
+  leadStatuses  Json    @default("[]")
+  currentStep   Int     @default(1)
 
   @@index([tenantId])
 }

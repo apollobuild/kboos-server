@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getApiKey, saveApiKey } from '../services/apiKeys.js';
-import { sendMessageToSession, testConnection, getQR, startNamedSession, stopNamedSession, getNamedSessionStatus } from '../services/openwa.js';
+import { sendMessageToSession, testConnection, getQR, startNamedSession, stopNamedSession, getNamedSessionStatus, getWarmupLimit } from '../services/openwa.js';
 import { PrismaClient } from '@prisma/client';
 
 const router = Router();
@@ -169,52 +169,145 @@ router.delete('/campaigns/:id', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /openwa/campaigns/:id/launch — send messages respecting daily limit
+// PATCH /openwa/sessions/:id/warmup — toggle warmup mode
+router.patch('/sessions/:id/warmup', requireAdmin, async (req, res, next) => {
+  try {
+    const { warmupEnabled } = req.body;
+    const s = await prisma.openWASession.update({
+      where: { id: req.params.id },
+      data: { warmupEnabled: !!warmupEnabled },
+    });
+    res.json(s);
+  } catch (e) { next(e); }
+});
+
+// GET /openwa/campaigns/:id/analytics
+router.get('/campaigns/:id/analytics', requireAuth, async (req, res, next) => {
+  try {
+    const c = await prisma.wAConnectCampaign.findUnique({ where: { id: parseInt(req.params.id) } });
+    if (!c) return res.status(404).json({ error: 'Not found' });
+    const leads = Array.isArray(c.leads) ? c.leads : [];
+    const statuses = Array.isArray(c.leadStatuses) ? c.leadStatuses : [];
+    const sent = statuses.filter(s => s.step >= 1).length;
+    const replied = statuses.filter(s => s.replied).length;
+    const optedOut = statuses.filter(s => s.optedOut).length;
+    const step2 = statuses.filter(s => s.step >= 2).length;
+    const step3 = statuses.filter(s => s.step >= 3).length;
+    res.json({ total: leads.length, sent, replied, optedOut, step2, step3, sentToday: c.sentCount, sendLimit: c.sendLimit });
+  } catch (e) { next(e); }
+});
+
+// POST /openwa/campaigns/:id/import-leads — import from KBOOS Lead Manager
+router.post('/campaigns/:id/import-leads', requireAuth, async (req, res, next) => {
+  try {
+    const { leadIds } = req.body; // array of lead IDs
+    if (!leadIds?.length) return res.status(400).json({ error: 'leadIds required' });
+    const dbLeads = await prisma.lead.findMany({
+      where: { id: { in: leadIds.map(Number) }, tenantId: req.user.tenantId },
+      select: { id: true, name: true, phone: true, company: true },
+    });
+    const mapped = dbLeads.filter(l => l.phone).map(l => ({ name: l.name, phone: l.phone, company: l.company || '' }));
+    const campaign = await prisma.wAConnectCampaign.findUnique({ where: { id: parseInt(req.params.id) } });
+    const existing = Array.isArray(campaign?.leads) ? campaign.leads : [];
+    const merged = [...existing, ...mapped.filter(n => !existing.some(e => e.phone === n.phone))];
+    await prisma.wAConnectCampaign.update({
+      where: { id: parseInt(req.params.id) },
+      data: { leads: merged },
+    });
+    res.json({ imported: mapped.length, total: merged.length });
+  } catch (e) { next(e); }
+});
+
+// POST /openwa/campaigns/:id/launch — send messages with warmup, rotation, A/B, lead status tracking
 router.post('/campaigns/:id/launch', requireAuth, async (req, res, next) => {
   try {
     const campaign = await prisma.wAConnectCampaign.findUnique({ where: { id: parseInt(req.params.id) } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    const session = await prisma.openWASession.findUnique({ where: { id: campaign.sessionId } });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
+    // Get all connected sessions for this tenant (for rotation)
+    const allSessions = await prisma.openWASession.findMany({
+      where: { tenantId: req.user.tenantId, status: 'connected' },
+    });
+    const targetSession = allSessions.find(s => s.id === campaign.sessionId) || allSessions[0];
+    if (!targetSession) return res.status(400).json({ error: 'No connected WhatsApp number' });
 
-    // Reset daily count if needed
+    // Reset daily counts if needed
     const now = new Date();
-    const lastReset = new Date(session.lastResetAt);
-    if (now.toDateString() !== lastReset.toDateString()) {
-      await prisma.openWASession.update({ where: { id: session.id }, data: { sentToday: 0, lastResetAt: now } });
-      session.sentToday = 0;
-    }
+    const resetPromises = allSessions.map(async s => {
+      if (now.toDateString() !== new Date(s.lastResetAt).toDateString()) {
+        // Also advance warmup week on new day
+        const newWeek = s.warmupEnabled ? Math.min(s.warmupWeek + (now - new Date(s.lastResetAt) > 6 * 86400000 ? 1 : 0), 4) : s.warmupWeek;
+        await prisma.openWASession.update({ where: { id: s.id }, data: { sentToday: 0, lastResetAt: now, warmupWeek: newWeek } });
+        s.sentToday = 0;
+      }
+    });
+    await Promise.all(resetPromises);
 
-    const remaining = session.dailyLimit - session.sentToday;
-    if (remaining <= 0) return res.status(429).json({ error: `Daily limit of ${session.dailyLimit} reached for this number` });
+    // Effective limit (warmup or full)
+    const effectiveLimit = targetSession.warmupEnabled ? getWarmupLimit(targetSession.warmupWeek) : targetSession.dailyLimit;
+    const remaining = effectiveLimit - targetSession.sentToday;
+    if (remaining <= 0) return res.status(429).json({ error: `Daily limit reached (${effectiveLimit}/day)${targetSession.warmupEnabled ? ' — warmup week ' + (targetSession.warmupWeek + 1) : ''}` });
 
     const toSend = Math.min(campaign.sendLimit, remaining);
-    const leads = (campaign.leads || []).slice(campaign.sentCount, campaign.sentCount + toSend);
+    const leads = (campaign.leads || []);
+    const leadStatuses = Array.isArray(campaign.leadStatuses) ? [...campaign.leadStatuses] : [];
+    const currentStep = campaign.currentStep || 1;
     const sequence = campaign.sequence || [];
-    const firstMsg = sequence[0]?.message || '';
+    const sequenceB = campaign.abVariantB || [];
+    const useAB = campaign.abEnabled && sequenceB.length > 0;
+    const stepMsg = sequence[currentStep - 1]?.message || sequence[0]?.message || '';
+    if (!stepMsg) return res.status(400).json({ error: 'No message for this step' });
 
-    if (!firstMsg) return res.status(400).json({ error: 'No message in sequence' });
+    // Filter leads who haven't had this step yet & not opted out
+    const pendingLeads = leads.filter(l => {
+      const st = leadStatuses.find(s => s.phone === l.phone);
+      if (st?.optedOut) return false;
+      if (st?.step >= currentStep) return false;
+      return true;
+    }).slice(0, toSend);
 
-    let sent = 0;
-    const errors = [];
+    // Smart rotation: use connected sessions round-robin
+    let sent = 0; const errors = [];
+    const sessionsToUse = allSessions.filter(s => {
+      const eff = s.warmupEnabled ? getWarmupLimit(s.warmupWeek) : s.dailyLimit;
+      return (eff - s.sentToday) > 0;
+    });
+    let sessionIdx = 0;
 
-    // Spread sends — 1 message every ~30s to stay safe
-    for (const lead of leads) {
+    for (const lead of pendingLeads) {
       try {
-        const msg = firstMsg.replace(/\{name\}/gi, lead.name || '').replace(/\{company\}/gi, lead.company || '');
-        await sendMessageToSession(session.sessionName, lead.phone, msg);
+        // Pick session (rotate if multiple available)
+        const sess = sessionsToUse[sessionIdx % sessionsToUse.length] || targetSession;
+        sessionIdx++;
+        const isVariantB = useAB && sessionIdx % 2 === 0;
+        const msg = (isVariantB ? sequenceB[currentStep - 1]?.message || stepMsg : stepMsg)
+          .replace(/\{name\}/gi, lead.name || '').replace(/\{company\}/gi, lead.company || '').replace(/\{first_name\}/gi, (lead.name || '').split(' ')[0]);
+
+        await sendMessageToSession(sess.sessionName, lead.phone, msg);
         sent++;
-        if (sent < leads.length) await new Promise(r => setTimeout(r, 30000)); // 30s gap
+
+        // Update lead status
+        const existingIdx = leadStatuses.findIndex(s => s.phone === lead.phone);
+        const newStatus = { phone: lead.phone, name: lead.name, step: currentStep, sentAt: new Date().toISOString(), variant: isVariantB ? 'B' : 'A' };
+        if (existingIdx >= 0) leadStatuses[existingIdx] = { ...leadStatuses[existingIdx], ...newStatus };
+        else leadStatuses.push(newStatus);
+
+        await prisma.openWASession.update({ where: { id: sess.id }, data: { sentToday: { increment: 1 } } });
+
+        // 30s gap between messages (safety spread)
+        if (sent < pendingLeads.length) await new Promise(r => setTimeout(r, 30000));
       } catch (err) {
         errors.push({ phone: lead.phone, error: err.message });
+        await prisma.openWASession.update({ where: { id: targetSession.id }, data: { errorCount: { increment: 1 }, healthScore: { decrement: 2 } } }).catch(() => {});
       }
     }
 
-    await prisma.openWASession.update({ where: { id: session.id }, data: { sentToday: session.sentToday + sent } });
-    await prisma.wAConnectCampaign.update({ where: { id: campaign.id }, data: { sentCount: campaign.sentCount + sent, status: 'active' } });
+    await prisma.wAConnectCampaign.update({
+      where: { id: campaign.id },
+      data: { sentCount: { increment: sent }, status: 'active', leadStatuses },
+    });
 
-    res.json({ sent, errors, remaining: session.dailyLimit - session.sentToday - sent });
+    res.json({ sent, errors, remaining: remaining - sent, warmupWeek: targetSession.warmupEnabled ? targetSession.warmupWeek + 1 : null });
   } catch (e) { next(e); }
 });
 

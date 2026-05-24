@@ -284,4 +284,64 @@ Write KOBIS AI's next reply. Under 60 words. Natural and human.`,
   }
 }
 
+// POST /webhooks/openwa — incoming WhatsApp message via OpenWA
+router.post('/openwa', async (req, res) => {
+  try {
+    res.sendStatus(200); // ack fast
+    const { body: msgBody, from, sessionName } = req.body;
+    if (!msgBody || !from) return;
+
+    const phone = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    const text = typeof msgBody === 'string' ? msgBody : msgBody?.text || '';
+
+    // Find matching lead
+    const lead = await prisma.lead.findFirst({
+      where: { phone: { contains: phone.slice(-8) } },
+      select: { id: true, name: true, company: true, tenantId: true },
+    }).catch(() => null);
+
+    const tenantId = lead?.tenantId || 'default';
+
+    // Check for stop words → suppress lead and update health score
+    const { isStopWord } = await import('../services/openwa.js');
+    if (isStopWord(text)) {
+      if (lead) {
+        await prisma.lead.update({ where: { id: lead.id }, data: { status: 'unsubscribed' } }).catch(() => {});
+      }
+      // Mark opted out in any WA campaigns
+      const campaigns = await prisma.wAConnectCampaign.findMany({ where: { tenantId } });
+      for (const c of campaigns) {
+        const statuses = Array.isArray(c.leadStatuses) ? c.leadStatuses : [];
+        const idx = statuses.findIndex(s => s.phone?.includes(phone.slice(-8)));
+        if (idx >= 0) {
+          statuses[idx].optedOut = true;
+          await prisma.wAConnectCampaign.update({ where: { id: c.id }, data: { leadStatuses: statuses } }).catch(() => {});
+        }
+      }
+      // Update session health
+      const session = await prisma.openWASession.findFirst({ where: { sessionName: sessionName || '' } }).catch(() => null);
+      if (session) await prisma.openWASession.update({ where: { id: session.id }, data: { optOutCount: { increment: 1 }, healthScore: { decrement: 5 } } }).catch(() => {});
+    }
+
+    // Create reply in unified inbox
+    await prisma.reply.create({
+      data: {
+        tenantId,
+        leadId: lead?.id || null,
+        name: lead?.name || phone,
+        company: lead?.company || '',
+        channel: 'whatsapp_connect',
+        msg: text,
+        status: 'unread',
+        hot: false,
+        unsub: isStopWord(text),
+        bizId: '',
+      },
+    }).catch(() => {});
+
+  } catch (err) {
+    console.error('[OpenWA webhook]', err.message);
+  }
+});
+
 export default router;
