@@ -17,7 +17,7 @@ async function getConfig() {
 function makeHeaders(apiKey) {
   return {
     'Content-Type': 'application/json',
-    ...(apiKey ? { 'X-API-Key': apiKey } : {}),
+    ...(apiKey ? { 'X-Api-Key': apiKey } : {}), // WAHA uses X-Api-Key exactly
   };
 }
 
