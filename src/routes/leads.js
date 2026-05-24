@@ -7,8 +7,9 @@ const prisma = new PrismaClient();
 
 router.get('/:id/actions', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const actions = await prisma.campaignAction.findMany({
-      where: { leadId: parseInt(req.params.id) },
+      where: { leadId: parseInt(req.params.id), tenantId: tid },
       orderBy: { sentAt: 'asc' },
     });
     res.json(actions);
@@ -17,7 +18,8 @@ router.get('/:id/actions', requireAuth, async (req, res, next) => {
 
 router.get('/:id', requireAuth, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.findUnique({ where: { id: parseInt(req.params.id) } });
+    const tid = req.user.tenantId;
+    const lead = await prisma.lead.findUnique({ where: { id: parseInt(req.params.id), tenantId: tid } });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     res.json(lead);
   } catch (e) { next(e); }
@@ -25,17 +27,22 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const where = req.query.campaignId ? { campaignId: parseInt(req.query.campaignId) } : {};
+    const tid = req.user.tenantId;
+    const where = req.query.campaignId
+      ? { campaignId: parseInt(req.query.campaignId), tenantId: tid }
+      : { tenantId: tid };
     res.json(await prisma.lead.findMany({ where, orderBy: { createdAt: 'desc' } }));
   } catch (e) { next(e); }
 });
 
 router.post('/bulk-import', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, leads } = req.body;
     if (!Array.isArray(leads) || leads.length === 0) return res.status(400).json({ error: 'No leads provided' });
     const data = leads.map(l => ({
       campaignId: campaignId ? parseInt(campaignId) : null,
+      tenantId: tid,
       name:    (l.name || l.Name || l.full_name || '').trim() || 'Unknown',
       company: (l.company || l.Company || l.organization || '').trim() || '',
       title:   (l.title || l.Title || l.job_title || '').trim() || '',
@@ -55,13 +62,17 @@ router.post('/bulk-import', requireAuth, async (req, res, next) => {
 });
 
 router.post('/', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.lead.create({ data: req.body })); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    res.json(await prisma.lead.create({ data: { ...req.body, tenantId: tid } }));
+  } catch (e) { next(e); }
 });
 
 router.patch('/bulk', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { ids, patch } = req.body;
-    await prisma.lead.updateMany({ where: { id: { in: ids } }, data: patch });
+    await prisma.lead.updateMany({ where: { id: { in: ids }, tenantId: tid }, data: patch });
     res.json({ ok: true, count: ids.length });
   } catch (e) { next(e); }
 });
@@ -69,21 +80,22 @@ router.patch('/bulk', requireAuth, async (req, res, next) => {
 // PATCH /leads/bulk-assign — reassign leads to a different campaign
 router.patch('/bulk-assign', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { ids, campaignId } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
     if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId), tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     await prisma.lead.updateMany({
-      where: { id: { in: ids.map(Number) } },
+      where: { id: { in: ids.map(Number) }, tenantId: tid },
       data: { campaignId: parseInt(campaignId), bizId: campaign.bizId, status: 'new' },
     });
 
-    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId), tenantId: tid } });
     await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: newTotal } });
-    await prisma.activity.create({ data: { color: 'blue', msg: `${ids.length} leads assigned to "${campaign.name}"`, tag: 'Leads' } }).catch(() => {});
+    await prisma.activity.create({ data: { color: 'blue', msg: `${ids.length} leads assigned to "${campaign.name}"`, tag: 'Leads', tenantId: tid } }).catch(() => {});
 
     res.json({ ok: true, count: ids.length });
   } catch (e) { next(e); }
@@ -92,12 +104,13 @@ router.patch('/bulk-assign', requireAuth, async (req, res, next) => {
 // POST /leads/bulk-enrich — enrich leads via Apollo (fills email, title, phone)
 router.post('/bulk-enrich', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
 
     const { enrichLead } = await import('../services/apollo.js');
     const leads = await prisma.lead.findMany({
-      where: { id: { in: ids.map(Number) } },
+      where: { id: { in: ids.map(Number) }, tenantId: tid },
       select: { id: true, company: true, address: true, email: true, title: true, phone: true },
     });
 
@@ -128,22 +141,25 @@ router.post('/bulk-enrich', requireAuth, async (req, res, next) => {
 // DELETE /leads/bulk — delete multiple leads by id
 router.delete('/bulk', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
-    await prisma.lead.deleteMany({ where: { id: { in: ids.map(Number) } } });
+    await prisma.lead.deleteMany({ where: { id: { in: ids.map(Number) }, tenantId: tid } });
     res.json({ ok: true, count: ids.length });
   } catch (e) { next(e); }
 });
 
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
-    const lead = await prisma.lead.update({ where: { id: parseInt(req.params.id) }, data: req.body });
+    const tid = req.user.tenantId;
+    const lead = await prisma.lead.update({ where: { id: parseInt(req.params.id), tenantId: tid }, data: req.body });
     if (req.body.status) {
       const colorMap = { hot:'amber', meeting_booked:'green', replied:'blue', unsubscribed:'red', bounced:'red' };
       await prisma.activity.create({ data: {
         color: colorMap[req.body.status] || 'blue',
         msg: `${lead.name} (${lead.company}) marked as ${req.body.status.replace(/_/g, ' ')}`,
         tag: 'Leads',
+        tenantId: tid,
       }}).catch(() => {});
 
       // Track opens/replies against the currently active template
@@ -167,7 +183,11 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
 });
 
 router.delete('/:id', requireAuth, async (req, res, next) => {
-  try { await prisma.lead.delete({ where: { id: parseInt(req.params.id) } }); res.json({ ok: true }); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    await prisma.lead.delete({ where: { id: parseInt(req.params.id), tenantId: tid } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
 });
 
 export default router;

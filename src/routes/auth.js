@@ -7,10 +7,23 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+function getTenantSlug(req) {
+  const host = req.headers.host || '';
+  // kobis.kboos.digital → "kobis"
+  // kboos.digital or localhost → "default"
+  const parts = host.split('.');
+  if (parts.length >= 3) return parts[0];
+  return 'default';
+}
+
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
+    const slug = getTenantSlug(req);
+    const tenant = await prisma.tenant.findUnique({ where: { slug } });
+    const tenantId = tenant?.id || 'default';
+
+    const user = await prisma.user.findFirst({ where: { email, tenantId } });
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -18,8 +31,9 @@ router.post('/login', async (req, res, next) => {
       return res.status(403).json({ error: 'Please set your password using the invite link first' });
     }
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    const token = jwt.sign({ id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId } });
+    const payload = { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId } });
   } catch (e) { next(e); }
 });
 
@@ -34,7 +48,7 @@ router.get('/me', async (req, res, next) => {
 
 router.get('/invite/:token', async (req, res, next) => {
   try {
-    const user = await prisma.user.findUnique({ where: { inviteToken: req.params.token } });
+    const user = await prisma.user.findFirst({ where: { inviteToken: req.params.token } });
     if (!user) return res.status(404).json({ error: 'Invalid or expired invite link' });
     res.json({ name: user.name, email: user.email });
   } catch (e) { next(e); }
@@ -46,21 +60,16 @@ router.post('/set-password', async (req, res, next) => {
     if (!token || !password || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
-    const user = await prisma.user.findUnique({ where: { inviteToken: token } });
+    const user = await prisma.user.findFirst({ where: { inviteToken: token } });
     if (!user) return res.status(404).json({ error: 'Invalid or expired invite link' });
-
     const hash = await bcrypt.hash(password, 10);
     await prisma.user.update({
       where: { id: user.id },
       data: { password: hash, inviteToken: null },
     });
-
-    const jwtToken = jwt.sign(
-      { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId } });
+    const payload = { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId: user.tenantId };
+    const jwtToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId: user.tenantId } });
   } catch (e) { next(e); }
 });
 

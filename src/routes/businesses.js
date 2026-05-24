@@ -7,10 +7,11 @@ const prisma = new PrismaClient();
 
 router.get('/', requireAuth, async (req, res, next) => {
   try {
-    const list = await prisma.business.findMany({ orderBy: { createdAt: 'asc' } });
+    const tid = req.user.tenantId;
+    const list = await prisma.business.findMany({ where: { tenantId: tid }, orderBy: { createdAt: 'asc' } });
     const clientCounts = await prisma.user.groupBy({
       by: ['bizId'],
-      where: { role: 'client', bizId: { not: null } },
+      where: { role: 'client', bizId: { not: null }, tenantId: tid },
       _count: true,
     });
     const countMap = {};
@@ -21,21 +22,24 @@ router.get('/', requireAuth, async (req, res, next) => {
 
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const biz = await prisma.business.create({ data: req.body });
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.create({ data: { ...req.body, tenantId: tid } });
     res.json(biz);
   } catch (e) { next(e); }
 });
 
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
-    const biz = await prisma.business.update({ where: { id: req.params.id }, data: req.body });
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.update({ where: { id: req.params.id, tenantId: tid }, data: req.body });
     res.json(biz);
   } catch (e) { next(e); }
 });
 
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    await prisma.business.delete({ where: { id: req.params.id } });
+    const tid = req.user.tenantId;
+    await prisma.business.delete({ where: { id: req.params.id, tenantId: tid } });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

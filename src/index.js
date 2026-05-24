@@ -25,6 +25,7 @@ import meetingsRoutes from './routes/meetings.js';
 import analyticsRoutes from './routes/analytics.js';
 import searchRoutes from './routes/search.js';
 import reportsRoutes from './routes/reports.js';
+import tenantRoutes from './routes/tenants.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
@@ -97,6 +98,7 @@ app.use('/meetings', meetingsRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/search', searchRoutes);
 app.use('/reports', reportsRoutes);
+app.use('/tenants', tenantRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

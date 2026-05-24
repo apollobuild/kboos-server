@@ -7,8 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("agency")
+  active    Boolean  @default(true)
+  country   String   @default("MY")
+  currency  String   @default("MYR")
+  timezone  String   @default("Asia/Kuala_Lumpur")
+  mobilePrefix String @default("+60")
+  languages String[] @default(["EN","MS"])
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+}
+
 model User {
   id            String    @id @default(cuid())
+  tenantId      String    @default("default")
   email         String    @unique
   password      String
   name          String
@@ -17,10 +33,13 @@ model User {
   inviteToken   String?   @unique
   lastLoginAt   DateTime?
   createdAt     DateTime  @default(now())
+
+  @@index([tenantId])
 }
 
 model Business {
   id        String     @id
+  tenantId  String     @default("default")
   name      String
   industry  String
   color     String     @default("blue")
@@ -40,10 +59,13 @@ model Business {
   status           String?
   createdAt        DateTime   @default(now())
   Campaign  Campaign[]
+
+  @@index([tenantId])
 }
 
 model Campaign {
   id        Int      @id @default(autoincrement())
+  tenantId  String   @default("default")
   bizId     String
   biz       Business @relation(fields: [bizId], references: [id])
   bizName   String
@@ -77,10 +99,13 @@ model Campaign {
   personalizationLevel Int   @default(2)
   leadSource         String  @default("gmaps")
   channelStrategy    String?
+
+  @@index([tenantId])
 }
 
 model Lead {
   id         Int      @id @default(autoincrement())
+  tenantId   String   @default("default")
   campaignId Int?
   bizId      String?
   name       String
@@ -128,10 +153,13 @@ model Lead {
   category           String   @default("")
   rating             Float?
   reviewCount        Int?
+
+  @@index([tenantId])
 }
 
 model Reply {
   id        Int      @id @default(autoincrement())
+  tenantId  String   @default("default")
   leadId    Int?
   bizId     String?
   name      String
@@ -146,18 +174,24 @@ model Reply {
   aiStage     String  @default("cold")
   aiEscalate  Boolean @default(false)
   createdAt DateTime @default(now())
+
+  @@index([tenantId])
 }
 
 model Activity {
   id        Int      @id @default(autoincrement())
+  tenantId  String   @default("default")
   color     String
   msg       String
   tag       String
   createdAt DateTime @default(now())
+
+  @@index([tenantId])
 }
 
 model AppSettings {
   id              String  @id @default("global")
+  tenantId        String  @default("default")
   apiKeysEnc      Json    @default("{}")
   driveConnected  Boolean @default(false)
   billingSchedule String  @default("weekly")
@@ -174,10 +208,13 @@ model AppSettings {
   replyPersonas  Json @default("[]")
   replyGoals     Json @default("[]")
   autoReplyConfig Json?
+
+  @@index([tenantId])
 }
 
 model ApiUsageLog {
   id        Int      @id @default(autoincrement())
+  tenantId  String   @default("default")
   service   String
   action    String
   units     Float    @default(0)
@@ -186,6 +223,7 @@ model ApiUsageLog {
   createdAt DateTime @default(now())
 
   @@index([service, createdAt])
+  @@index([tenantId])
 }
 
 model CampaignAction {
@@ -208,12 +246,16 @@ model CampaignAction {
 
 model Wallet {
   id        String   @id @default("global")
+  tenantId  String   @default("default")
   balance   Int      @default(0)
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model WalletTransaction {
   id          Int      @id @default(autoincrement())
+  tenantId    String   @default("default")
   type        String
   amountSen   Int
   billplzId   String?  @unique
@@ -224,6 +266,7 @@ model WalletTransaction {
 
 model BusinessSequence {
   id          String   @id @default(cuid())
+  tenantId    String   @default("default")
   bizId       String   @unique
   brief       Json     @default("{}")
   persona     Json     @default("{}")
@@ -236,6 +279,7 @@ model BusinessSequence {
 
 model OnboardToken {
   id        String    @id @default(cuid())
+  tenantId  String    @default("default")
   bizId     String
   bizName   String    @default("")
   token     String    @unique @default(cuid())
@@ -261,6 +305,7 @@ model AiInsightCache {
 
 model DemoProspect {
   id            String   @id @default(cuid())
+  tenantId      String   @default("default")
   name          String
   company       String
   industry      String   @default("")
@@ -278,6 +323,7 @@ model DemoProspect {
 
 model CampaignPipeline {
   id                  Int       @id @default(autoincrement())
+  tenantId            String    @default("default")
   campaignId          Int       @unique
   stage               String    @default("draft")
   scrapeTotal         Int?
@@ -318,6 +364,7 @@ model CampaignPipeline {
 
 model CampaignOptimization {
   id           Int      @id @default(autoincrement())
+  tenantId     String   @default("default")
   campaignId   Int
   analyzedAt   DateTime @default(now())
   metrics      Json     @default("{}")
@@ -329,6 +376,7 @@ model CampaignOptimization {
 
 model CampaignAsset {
   id          Int      @id @default(autoincrement())
+  tenantId    String   @default("default")
   campaignId  Int
   assetType   String
   channel     String
@@ -386,6 +434,7 @@ model LeadEligibility {
 
 model MeetingLog {
   id            Int      @id @default(autoincrement())
+  tenantId      String   @default("default")
   leadId        Int
   campaignId    Int
   bizId         String
@@ -405,4 +454,5 @@ model MeetingLog {
   @@index([campaignId])
   @@index([bizId])
   @@index([meetingDate])
+  @@index([tenantId])
 }

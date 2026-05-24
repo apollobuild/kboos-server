@@ -19,3 +19,10 @@ export function requireAdmin(req, res, next) {
     next();
   });
 }
+
+export function requireSuperAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Super admin only' });
+    next();
+  });
+}

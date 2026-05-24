@@ -9,17 +9,24 @@ const router = Router();
 const prisma = new PrismaClient();
 
 router.get('/', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.reply.findMany({ orderBy: { createdAt: 'desc' } })); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    res.json(await prisma.reply.findMany({ where: { tenantId: tid }, orderBy: { createdAt: 'desc' } }));
+  } catch (e) { next(e); }
 });
 
 router.patch('/:id', requireAuth, async (req, res, next) => {
-  try { res.json(await prisma.reply.update({ where: { id: parseInt(req.params.id) }, data: req.body })); } catch (e) { next(e); }
+  try {
+    const tid = req.user.tenantId;
+    res.json(await prisma.reply.update({ where: { id: parseInt(req.params.id), tenantId: tid }, data: req.body }));
+  } catch (e) { next(e); }
 });
 
 // Generate AI draft — stores in DB, returns it
 router.post('/:id/generate-draft', requireAuth, async (req, res, next) => {
   try {
-    const reply = await prisma.reply.findUnique({ where: { id: parseInt(req.params.id) } });
+    const tid = req.user.tenantId;
+    const reply = await prisma.reply.findUnique({ where: { id: parseInt(req.params.id), tenantId: tid } });
     if (!reply) return res.status(404).json({ error: 'Reply not found' });
 
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } }).catch(() => null);
@@ -69,8 +76,9 @@ router.post('/:id/generate-draft', requireAuth, async (req, res, next) => {
 // Send the draft (or a manually edited version) — adds to thread, marks handled
 router.post('/:id/send-draft', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { message } = req.body;
-    const reply = await prisma.reply.findUnique({ where: { id: parseInt(req.params.id) } });
+    const reply = await prisma.reply.findUnique({ where: { id: parseInt(req.params.id), tenantId: tid } });
     if (!reply) return res.status(404).json({ error: 'Reply not found' });
 
     const lead = reply.leadId ? await prisma.lead.findUnique({ where: { id: reply.leadId } }).catch(() => null) : null;
@@ -110,7 +118,7 @@ router.post('/:id/send-draft', requireAuth, async (req, res, next) => {
 
     // Log activity
     await prisma.activity.create({
-      data: { color: 'blue', msg: `AI reply sent to ${reply.name} at ${reply.company} via ${reply.channel}`, tag: 'Reply' },
+      data: { color: 'blue', msg: `AI reply sent to ${reply.name} at ${reply.company} via ${reply.channel}`, tag: 'Reply', tenantId: tid },
     }).catch(() => {});
 
     res.json({ ok: true, sent: sendOk });
