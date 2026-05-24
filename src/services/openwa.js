@@ -3,7 +3,6 @@ import { getApiKey } from './apiKeys.js';
 function normalizeUrl(raw) {
   const trimmed = (raw || '').trim().replace(/\/$/, '');
   const withProto = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
-  // Upgrade http:// → https:// for non-local URLs (Railway, etc.)
   const isLocal = /localhost|127\.0\.0\.1|192\.168\./.test(withProto);
   return (!isLocal && withProto.startsWith('http://')) ? withProto.replace('http://', 'https://') : withProto;
 }
@@ -22,16 +21,18 @@ function makeHeaders(apiKey) {
   };
 }
 
+function wlog(msg) { console.log(`[WAHA] ${msg}`); }
+
 // WAHA API: GET /api/sessions/{session}
 export async function getNamedSessionStatus(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
     const res = await fetch(`${baseUrl}/api/sessions/${sessionName}`, {
       headers: makeHeaders(apiKey),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(5000),
     });
     if (res.status === 404) return { status: 'no_session' };
-    if (!res.ok) return { status: 'error' };
+    if (!res.ok) return { status: 'error', code: res.status };
     const data = await res.json();
     return {
       status: data.status,
@@ -39,94 +40,156 @@ export async function getNamedSessionStatus(sessionName) {
       phone: data.me?.id?.user || data.me?.user || null,
       name: data.me?.pushName || data.me?.pushname || null,
     };
-  } catch {
+  } catch (e) {
+    wlog(`getStatus error: ${e.message}`);
     return { status: 'unreachable' };
   }
 }
 
-// WAHA API: start a session — handles WAHA v1 and v2 APIs, checks existing state first
-export async function startNamedSession(sessionName) {
-  const { baseUrl, apiKey } = await getConfig();
-  const h = makeHeaders(apiKey);
-
-  // Check current state — avoid redundant starts
-  const existing = await getNamedSessionStatus(sessionName);
-  if (existing.status === 'WORKING') return null; // Already connected
-
-  // If QR is already showing, just fetch it
-  if (existing.status === 'SCAN_QR_CODE') {
-    const qr = await getQR(sessionName);
-    if (qr) return qr;
-  }
-
-  // WAHA v2: POST /api/sessions { name, start:true } (preferred)
-  const createRes = await fetch(`${baseUrl}/api/sessions`, {
-    method: 'POST',
-    headers: h,
-    body: JSON.stringify({ name: sessionName, start: true }),
-    signal: AbortSignal.timeout(8000),
-  }).catch(() => null);
-
-  // If session already exists in WAHA, start it directly
-  if (!createRes?.ok) {
-    await fetch(`${baseUrl}/api/sessions/${sessionName}/start`, {
-      method: 'POST', headers: h, signal: AbortSignal.timeout(8000),
-    }).catch(() => {});
-    // WAHA v1 fallback
-    await fetch(`${baseUrl}/api/sessions/start`, {
-      method: 'POST', headers: h,
-      body: JSON.stringify({ name: sessionName }),
-      signal: AbortSignal.timeout(8000),
-    }).catch(() => {});
-  }
-
-  // Poll for QR up to 60s (Railway cold-start can be slow)
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 1000));
-    const qr = await getQR(sessionName);
-    if (qr) return qr;
-  }
-  throw new Error('QR code not ready — try refreshing');
-}
-
-// WAHA API: GET /api/{session}/auth/qr  or  GET /api/screenshot?session={session}
+// WAHA API: GET /api/{session}/auth/qr
 export async function getQR(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
     const h = makeHeaders(apiKey);
 
-    // Try WAHA QR JSON endpoint first
-    const jsonRes = await fetch(`${baseUrl}/api/${sessionName}/auth/qr`, { headers: h, signal: AbortSignal.timeout(4000) });
+    // Primary: GET /api/{session}/auth/qr — returns JSON { value: "data:image/..." }
+    const jsonRes = await fetch(`${baseUrl}/api/${sessionName}/auth/qr`, {
+      headers: h, signal: AbortSignal.timeout(5000),
+    });
     if (jsonRes.ok) {
-      const d = await jsonRes.json();
-      // WAHA returns { value: "data:image/png;base64,..." }
-      if (d.value) return d.value;
-      if (d.qr) return d.qr;
-    }
-
-    // Fallback: screenshot endpoint GET /api/screenshot?session=name
-    const imgRes = await fetch(`${baseUrl}/api/screenshot?session=${sessionName}`, { headers: h, signal: AbortSignal.timeout(4000) });
-    if (imgRes.ok) {
-      const ct = imgRes.headers.get('content-type') || '';
+      const ct = jsonRes.headers.get('content-type') || '';
       if (ct.includes('image')) {
-        const buf = await imgRes.arrayBuffer();
+        const buf = await jsonRes.arrayBuffer();
         return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
       }
-      const d = await imgRes.json().catch(() => null);
+      const d = await jsonRes.json().catch(() => null);
+      if (d?.value) return d.value;
+      if (d?.qr) return d.qr;
+    }
+
+    // Try explicit image format
+    const imgQrRes = await fetch(`${baseUrl}/api/${sessionName}/auth/qr?format=image`, {
+      headers: h, signal: AbortSignal.timeout(5000),
+    });
+    if (imgQrRes.ok) {
+      const ct = imgQrRes.headers.get('content-type') || '';
+      if (ct.includes('image')) {
+        const buf = await imgQrRes.arrayBuffer();
+        return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
+      }
+    }
+
+    // Screenshot fallback
+    const scrRes = await fetch(`${baseUrl}/api/screenshot?session=${sessionName}`, {
+      headers: h, signal: AbortSignal.timeout(5000),
+    });
+    if (scrRes.ok) {
+      const ct = scrRes.headers.get('content-type') || '';
+      if (ct.includes('image')) {
+        const buf = await scrRes.arrayBuffer();
+        return `data:image/png;base64,${Buffer.from(buf).toString('base64')}`;
+      }
+      const d = await scrRes.json().catch(() => null);
       if (d?.value) return d.value;
     }
+
     return null;
   } catch { return null; }
 }
 
-// WAHA API: POST /api/sessions/stop  { name }
+export async function startNamedSession(sessionName) {
+  const { baseUrl, apiKey } = await getConfig();
+  const h = makeHeaders(apiKey);
+
+  wlog(`Starting: ${sessionName} | URL: ${baseUrl}`);
+
+  // Check existing state
+  const existing = await getNamedSessionStatus(sessionName);
+  wlog(`Existing status: ${existing.status}`);
+
+  if (existing.status === 'WORKING') { wlog('Already connected'); return null; }
+
+  if (existing.status === 'SCAN_QR_CODE') {
+    wlog('Already at QR stage');
+    const qr = await getQR(sessionName);
+    if (qr) return qr;
+  }
+
+  // Stop any stuck session before retrying
+  if (!['no_session', 'unreachable'].includes(existing.status)) {
+    wlog(`Stopping stuck session (${existing.status})`);
+    await fetch(`${baseUrl}/api/sessions/${sessionName}/stop`, {
+      method: 'POST', headers: h, signal: AbortSignal.timeout(5000),
+    }).catch(e => wlog(`Stop error: ${e.message}`));
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
+  // Step 1: WAHA v2 — POST /api/sessions { name, start: true }
+  wlog('Trying WAHA v2: POST /api/sessions');
+  const createRes = await fetch(`${baseUrl}/api/sessions`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify({ name: sessionName, start: true }),
+    signal: AbortSignal.timeout(10000),
+  }).catch(e => { wlog(`Create error: ${e.message}`); return null; });
+
+  wlog(`Create status: ${createRes?.status}`);
+
+  if (!createRes?.ok) {
+    const errBody = createRes ? await createRes.text().catch(() => '') : 'no response';
+    wlog(`Create failed (${createRes?.status}): ${errBody}`);
+
+    // Step 2: session may already exist — try starting it
+    wlog('Trying POST /api/sessions/{name}/start');
+    const startRes = await fetch(`${baseUrl}/api/sessions/${sessionName}/start`, {
+      method: 'POST', headers: h, signal: AbortSignal.timeout(10000),
+    }).catch(e => { wlog(`Start error: ${e.message}`); return null; });
+    wlog(`Start status: ${startRes?.status}`);
+
+    if (!startRes?.ok) {
+      // Step 3: WAHA v1 fallback
+      wlog('Trying WAHA v1: POST /api/sessions/start');
+      const v1Res = await fetch(`${baseUrl}/api/sessions/start`, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ name: sessionName }),
+        signal: AbortSignal.timeout(10000),
+      }).catch(e => { wlog(`v1 error: ${e.message}`); return null; });
+      wlog(`v1 status: ${v1Res?.status}`);
+
+      if (!v1Res?.ok) {
+        const v1Err = v1Res ? await v1Res.text().catch(() => '') : 'no response';
+        wlog(`All start attempts failed. Last error: ${v1Err}`);
+        throw new Error(`WAHA could not start session — check Railway WAHA logs. URL: ${baseUrl} | Error: ${v1Err || `HTTP ${v1Res?.status}`}`);
+      }
+    }
+  }
+
+  // Poll for QR — status-aware, up to 60s
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const live = await getNamedSessionStatus(sessionName);
+    wlog(`Poll ${i + 1}/60: ${live.status}`);
+
+    if (live.status === 'WORKING') { wlog('Connected!'); return null; }
+    if (live.status === 'FAILED') throw new Error('WAHA session failed — check WAHA server logs');
+
+    if (live.status === 'SCAN_QR_CODE') {
+      const qr = await getQR(sessionName);
+      if (qr) { wlog('QR obtained!'); return qr; }
+    }
+    // STARTING/STOPPED states: keep waiting
+  }
+
+  throw new Error('QR code not ready after 60s — check Railway → WAHA service logs for errors');
+}
+
+// WAHA API: POST /api/sessions/{name}/stop
 export async function stopNamedSession(sessionName) {
   try {
     const { baseUrl, apiKey } = await getConfig();
-    const res = await fetch(`${baseUrl}/api/sessions/stop`, {
+    const res = await fetch(`${baseUrl}/api/sessions/${sessionName}/stop`, {
       method: 'POST',
       headers: makeHeaders(apiKey),
-      body: JSON.stringify({ name: sessionName }),
+      signal: AbortSignal.timeout(5000),
     });
     return res.ok;
   } catch { return false; }
@@ -150,8 +213,8 @@ export async function sendMessageToSession(sessionName, phone, message) {
 
 export async function testConnection(url, key) {
   try {
-    const raw = (url || '').replace(/\/$/, '');
-    const base = raw.startsWith('http') ? raw : `https://${raw}`;
+    const base = normalizeUrl(url || '');
+    if (!base) return false;
     const res = await fetch(`${base}/api/sessions`, {
       headers: makeHeaders(key || ''),
       signal: AbortSignal.timeout(5000),
@@ -174,23 +237,18 @@ export function isStopWord(text) {
 
 export function isBusinessHours() {
   const now = new Date();
-  // Convert to UTC+8 (KL/SG time)
   const utc8 = new Date(now.getTime() + 8 * 3600000);
-  const day = utc8.getUTCDay(); // 0=Sun, 6=Sat
+  const day = utc8.getUTCDay();
   const hour = utc8.getUTCHours();
   return day >= 1 && day <= 5 && hour >= 9 && hour < 18;
 }
 
-// Warmup: returns effective daily limit based on warmup week
 export function getWarmupLimit(week) {
   const limits = [20, 50, 100, 150, 200];
   return limits[Math.min(week, limits.length - 1)];
 }
 
 export async function sendWithSafetyChecks(sessionName, phone, message) {
-  // Only send during business hours
-  if (!isBusinessHours()) {
-    throw new Error('Outside business hours (9am–6pm Mon–Fri)');
-  }
+  if (!isBusinessHours()) throw new Error('Outside business hours (9am–6pm Mon–Fri)');
   return sendMessageToSession(sessionName, phone, message);
 }

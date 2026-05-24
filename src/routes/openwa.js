@@ -39,6 +39,31 @@ router.post('/config/test', requireAdmin, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Diagnose endpoint — shows exactly what WAHA returns so we can debug
+router.get('/diagnose', requireAdmin, async (req, res, next) => {
+  try {
+    const { getApiKey: getKey } = await import('../services/apiKeys.js');
+    const rawUrl = await getKey('openwa_url');
+    const rawKey = await getKey('openwa_key');
+    const { default: f } = await import('node-fetch').catch(() => ({ default: fetch }));
+    const fetchFn = typeof fetch !== 'undefined' ? fetch : f;
+
+    function norm(u) {
+      const t = (u || '').trim().replace(/\/$/, '');
+      const p = t.startsWith('http') ? t : `https://${t}`;
+      return (!p.includes('localhost') && p.startsWith('http://')) ? p.replace('http://', 'https://') : p;
+    }
+    const base = norm(rawUrl);
+    const headers = { 'Content-Type': 'application/json', ...(rawKey ? { 'X-API-Key': rawKey } : {}) };
+
+    const r = await fetchFn(`${base}/api/sessions`, { headers, signal: AbortSignal.timeout(6000) });
+    const body = await r.text();
+    let parsed; try { parsed = JSON.parse(body); } catch { parsed = body; }
+
+    res.json({ storedUrl: rawUrl, normalizedUrl: base, httpStatus: r.status, sessions: parsed });
+  } catch (e) { res.json({ error: e.message }); }
+});
+
 // ── Sessions (multi-number) ──────────────────────────────────────────────────
 
 router.get('/sessions', requireAuth, async (req, res, next) => {
