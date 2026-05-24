@@ -287,4 +287,192 @@ router.post('/parallel', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// ─── Preview helpers (no DB writes) ─────────────────────────────────────────
+
+function isMalaysianMobile(phone) {
+  if (!phone) return false;
+  const cleaned = phone.replace(/[\s\-\(\)\+]/g, '');
+  return /^601[0-9]{8,9}$/.test(cleaned) || /^01[0-9]{8,9}$/.test(cleaned);
+}
+
+// POST /scraper/apollo-preview
+router.post('/apollo-preview', requireAuth, async (req, res, next) => {
+  try {
+    const { jobTitles = [], seniority = [], city, limit = 50 } = req.body;
+    const { getApiKey } = await import('../services/apiKeys.js');
+    const apolloKey = await getApiKey('apollo');
+    if (!apolloKey) return res.status(400).json({ error: 'Apollo API key not configured in Settings' });
+
+    const apolloRes = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'X-Api-Key': apolloKey },
+      body: JSON.stringify({
+        q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
+        person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
+        person_titles: jobTitles.length ? jobTitles : undefined,
+        per_page: Math.min(limit, 100),
+        page: 1,
+      }),
+    });
+    if (!apolloRes.ok) {
+      const t = await apolloRes.text();
+      let msg = t; try { msg = JSON.parse(t).error || t; } catch {}
+      throw new Error(`Apollo: ${msg}`);
+    }
+    const people = (await apolloRes.json()).people || [];
+    const leads = people.map(p => ({
+      name: p.name || 'Unknown',
+      company: p.organization?.name || '',
+      title: p.title || '',
+      phone: p.phone_number || '',
+      email: p.email || '',
+      website: p.organization?.website_url || '',
+      address: p.city ? `${p.city}, Malaysia` : '',
+      score: 40,
+      source: 'apollo',
+      hasMobile: isMalaysianMobile(p.phone_number),
+    }));
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length });
+  } catch (e) { next(e); }
+});
+
+// POST /scraper/maps-preview
+router.post('/maps-preview', requireAuth, async (req, res, next) => {
+  try {
+    const { keyword, city, limit = 50 } = req.body;
+    if (!keyword || !city) return res.status(400).json({ error: 'keyword and city are required' });
+    const places = await searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 100) });
+    const leads = places.map(place => {
+      const l = mapPlaceToLead({ place, campaignId: 0, bizId: '' });
+      return {
+        name: l.name || place.name || '',
+        company: l.company || place.name || '',
+        title: 'Business Owner',
+        phone: l.phone || '',
+        email: l.email || '',
+        website: l.website || '',
+        address: l.address || '',
+        score: 30,
+        source: 'maps',
+        hasMobile: isMalaysianMobile(l.phone),
+      };
+    });
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length });
+  } catch (e) { next(e); }
+});
+
+// POST /scraper/smart-preview
+router.post('/smart-preview', requireAuth, async (req, res, next) => {
+  try {
+    const { keyword, city, jobTitles = [], seniority = [], limit = 100 } = req.body;
+    if (!city) return res.status(400).json({ error: 'city is required' });
+
+    function norm(s) {
+      return (s || '').toLowerCase()
+        .replace(/\b(sdn|bhd|berhad|ltd|limited|corp|enterprise|enterprises|trading|industries|industry|group|holdings|holding|malaysia)\b/g, '')
+        .replace(/[^a-z0-9]/g, '').trim();
+    }
+
+    const [gmapsResult, apolloResult] = await Promise.allSettled([
+      keyword
+        ? searchGoogleMaps({ query: `${keyword} in ${city}, Malaysia`, limit: Math.min(limit, 300) })
+        : Promise.resolve([]),
+      (async () => {
+        const { getApiKey } = await import('../services/apiKeys.js');
+        const apolloKey = await getApiKey('apollo');
+        if (!apolloKey) return [];
+        const r = await fetch('https://api.apollo.io/api/v1/mixed_people/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': apolloKey },
+          body: JSON.stringify({
+            q_organization_locations: [`${city}, Malaysia`],
+            person_seniorities: seniority.length ? seniority : ['owner', 'founder', 'c_suite', 'director', 'manager'],
+            person_titles: jobTitles.length ? jobTitles : undefined,
+            per_page: Math.min(limit, 100),
+            page: 1,
+          }),
+        });
+        if (!r.ok) return [];
+        return (await r.json()).people || [];
+      })(),
+    ]);
+
+    const gmapsPlaces = gmapsResult.status === 'fulfilled' ? gmapsResult.value : [];
+    const apolloPeople = apolloResult.status === 'fulfilled' ? apolloResult.value : [];
+
+    const apolloMap = {};
+    for (const p of apolloPeople) {
+      const key = norm(p.organization?.name || '');
+      if (key && !apolloMap[key]) apolloMap[key] = p;
+    }
+
+    const leads = [];
+    for (const place of gmapsPlaces) {
+      const base = mapPlaceToLead({ place, campaignId: 0, bizId: '' });
+      const key = norm(base.company);
+      const match = apolloMap[key];
+      if (match) {
+        delete apolloMap[key];
+        const phone = base.phone || match.phone_number || '';
+        leads.push({ name: match.name || base.name, company: base.company || match.organization?.name || '', title: match.title || 'Business Owner', phone, email: match.email || base.email || '', website: base.website || match.organization?.website_url || '', address: base.address || (match.city ? `${match.city}, Malaysia` : ''), score: 60, source: 'both', hasMobile: isMalaysianMobile(phone) });
+      } else {
+        leads.push({ name: base.name || '', company: base.company || '', title: 'Business Owner', phone: base.phone || '', email: base.email || '', website: base.website || '', address: base.address || '', score: 30, source: 'maps', hasMobile: isMalaysianMobile(base.phone) });
+      }
+    }
+    for (const p of Object.values(apolloMap)) {
+      const phone = p.phone_number || '';
+      leads.push({ name: p.name || 'Unknown', company: p.organization?.name || '', title: p.title || '', phone, email: p.email || '', website: p.organization?.website_url || '', address: p.city ? `${p.city}, Malaysia` : '', score: 40, source: 'apollo', hasMobile: isMalaysianMobile(phone) });
+    }
+
+    res.json({ leads, total: leads.length, mobile: leads.filter(l => l.hasMobile).length, gmaps: gmapsPlaces.length, apollo: apolloPeople.length, merged: leads.filter(l => l.score === 60).length });
+  } catch (e) { next(e); }
+});
+
+// POST /scraper/import-selected — save chosen preview leads to a campaign
+router.post('/import-selected', requireAuth, async (req, res, next) => {
+  try {
+    const { campaignId, leads: selectedLeads = [] } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
+    if (!selectedLeads.length) return res.status(400).json({ error: 'No leads provided' });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: parseInt(campaignId) } });
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const existing = await prisma.lead.findMany({
+      where: { campaignId: parseInt(campaignId) },
+      select: { phone: true, email: true },
+    });
+    const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
+    const existingEmails = new Set(existing.map(l => l.email).filter(Boolean));
+
+    const toInsert = selectedLeads
+      .filter(l => (!l.phone || !existingPhones.has(l.phone)) && (!l.email || !existingEmails.has(l.email)))
+      .map(l => ({
+        campaignId: parseInt(campaignId),
+        bizId: campaign.bizId,
+        name: l.name || 'Unknown',
+        company: l.company || '',
+        title: l.title || '',
+        phone: l.phone || '',
+        email: l.email || '',
+        website: l.website || '',
+        address: l.address || '',
+        score: l.score || 0,
+        status: 'new',
+        lang: 'EN',
+        channels: [...(l.email ? ['email'] : []), ...(l.hasMobile ? ['whatsapp'] : [])],
+        last: new Date().toISOString(),
+      }));
+
+    if (!toInsert.length) return res.json({ count: 0, total: campaign.leads, msg: 'All selected leads already exist' });
+
+    await prisma.lead.createMany({ data: toInsert });
+    const newTotal = await prisma.lead.count({ where: { campaignId: parseInt(campaignId) } });
+    await prisma.campaign.update({ where: { id: parseInt(campaignId) }, data: { leads: newTotal } });
+    await prisma.activity.create({ data: { color: 'green', msg: `Imported ${toInsert.length} leads to "${campaign.name}"`, tag: 'Scraper' } }).catch(() => {});
+
+    res.json({ count: toInsert.length, total: newTotal });
+  } catch (e) { next(e); }
+});
+
 export default router;
