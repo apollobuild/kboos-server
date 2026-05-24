@@ -13,13 +13,13 @@ function parseApolloError(text) {
 }
 
 // Search for decision makers in a city (used during parallel scraping)
-export async function searchPeople({ city, jobTitles = [], seniorities = [], limit = 100 }) {
+export async function searchPeople({ city, jobTitles = [], seniorities = [], limit = 100, country = 'Malaysia' }) {
   const key = await getKey();
   const res = await fetch(`${BASE}/mixed_people/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': key },
     body: JSON.stringify({
-      q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
+      q_organization_locations: city ? [`${city}, ${country}`] : [country],
       person_seniorities: seniorities.length ? seniorities : ['owner', 'founder', 'c_suite', 'director', 'manager'],
       person_titles: jobTitles.length ? jobTitles : undefined,
       per_page: Math.min(limit, 100),
@@ -32,14 +32,14 @@ export async function searchPeople({ city, jobTitles = [], seniorities = [], lim
 }
 
 // Enrich a single lead by company name (used during enrichment phase)
-export async function enrichLead({ companyName, city }) {
+export async function enrichLead({ companyName, city, country = 'Malaysia' }) {
   const key = await getKey();
   const res = await fetch(`${BASE}/mixed_people/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Api-Key': key },
     body: JSON.stringify({
       q_organization_name: companyName,
-      q_organization_locations: city ? [`${city}, Malaysia`] : ['Malaysia'],
+      q_organization_locations: city ? [`${city}, ${country}`] : [country],
       person_seniorities: ['owner', 'founder', 'c_suite', 'director', 'manager'],
       per_page: 1,
       page: 1,

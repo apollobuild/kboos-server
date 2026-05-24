@@ -1,3 +1,5 @@
+import { isValidMobile } from './tenantConfig.js';
+
 export function scoreLeadQuality(lead, campaignConfig = {}) {
   let score = 0;
   const signals = [];
@@ -27,26 +29,26 @@ export function scoreLeadQuality(lead, campaignConfig = {}) {
   return { tier, qualityScore: score, signals, hasWebsite: !!lead.website, hasPhone: !!lead.phone, hasEmail: !!lead.email, categoryMatch, ratingOk };
 }
 
+// Deprecated alias — kept for backward compatibility
 export function isValidMalaysianMobile(phone) {
-  const digits = (phone || '').replace(/\D/g, '');
-  return digits.startsWith('601') && digits.length >= 10 && digits.length <= 12;
+  return isValidMobile(phone, '+60');
 }
 
 export function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '');
 }
 
-export function checkChannelEligibility(lead) {
+export function checkChannelEligibility(lead, mobilePrefix = '+60') {
   const emailOk = isValidEmail(lead.email);
-  const waOk = isValidMalaysianMobile(lead.phone);
+  const waOk = isValidMobile(lead.phone, mobilePrefix);
   const voiceOk = waOk;
   return {
     emailEligible: emailOk,
     waEligible: waOk,
     voiceEligible: voiceOk,
     emailReason: emailOk ? null : (lead.email ? 'Invalid email format' : 'No email address'),
-    waReason: waOk ? null : (lead.phone ? 'Not a valid MY mobile (needs 601x)' : 'No phone number'),
-    voiceReason: voiceOk ? null : (lead.phone ? 'Not a valid MY mobile (needs 601x)' : 'No phone number'),
+    waReason: waOk ? null : (lead.phone ? 'Not a valid mobile number' : 'No phone number'),
+    voiceReason: voiceOk ? null : (lead.phone ? 'Not a valid mobile number' : 'No phone number'),
   };
 }
 

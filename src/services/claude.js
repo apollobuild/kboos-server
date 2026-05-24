@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getApiKey } from './apiKeys.js';
 import { logClaude } from './costLogger.js';
+import { getMarketName } from './tenantConfig.js';
 
 async function getClient() {
   const key = await getApiKey('claude');
@@ -14,16 +15,18 @@ function parseJSON(text) {
   return JSON.parse(cleaned);
 }
 
-export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang }) {
+export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
     model,
     max_tokens: 1024,
-    system: 'You are an expert B2B outreach strategist for Malaysian SMEs. Return only valid JSON.',
+    system: `You are an expert B2B outreach strategist for ${market} SMEs. Return only valid JSON.`,
     messages: [{
       role: 'user',
-      content: `Generate outreach copy for ${name}, a ${industry} company in Malaysia.
+      content: `Generate outreach copy for ${name}, a ${industry} company in ${market}.
 ${website ? `Website: ${website}` : ''}
 Service: ${service}
 Target Audience: ${audience}
@@ -44,7 +47,9 @@ Return JSON with exactly these 4 keys. All values must be plain strings (no nest
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateEmail({ bizName, campaignName, prompt, lead }) {
+export async function generateEmail({ bizName, campaignName, prompt, lead, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const lang = lead.lang === 'MS' || lead.lang === 'BM' ? 'Bahasa Malaysia'
     : lead.lang === 'ZH' ? 'Mandarin Chinese'
@@ -53,7 +58,7 @@ export async function generateEmail({ bizName, campaignName, prompt, lead }) {
   const msg = await client.messages.create({
     model: emailModel,
     max_tokens: 1024,
-    system: `You are a cold email expert specialising in Malaysian B2B outreach. You write emails that get replies, not just opens.
+    system: `You are a cold email expert specialising in ${market} B2B outreach. You write emails that get replies, not just opens.
 
 Non-negotiable rules:
 - Subject: under 7 words. Never starts with the company name or "I". Must use one of these formulas: curiosity gap ("Still losing leads to competitors in Johor?"), hyper-specific stat ("3 ${lead.title || 'managers'} in ${lead.company || 'your industry'} replied this week"), social proof ("How [Similar Co] added 40% pipeline"), or direct question ("Quick question about {{company}}")
@@ -62,8 +67,8 @@ Non-negotiable rules:
 - One CTA only — never give the reader multiple options
 - Always end with a P.S. line — it gets read first and lifts reply rate significantly
 - Banned words and phrases: synergy, leverage, solutions, world-class, "I hope this email finds you well", "please find attached", "I wanted to reach out", "touching base"
-- Reference local Malaysian context where natural: city names, challenges like talent shortage, SST compliance, rising logistics costs, digital transformation pressure
-- Match Malaysian relationship-first culture: warm tone, not aggressive American-style sales
+- Reference local market context where natural: relevant local business challenges
+- Match relationship-first business culture in ${market}: warm tone, not aggressive American-style sales
 
 Return only valid JSON.`,
     messages: [{
@@ -85,7 +90,9 @@ Return JSON with exactly these keys:
   return { ...parsed, subject: Array.isArray(parsed.subjects) ? parsed.subjects[0] : parsed.subject || '' };
 }
 
-export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub, thread = [], persona = {}, goal = '', bizName = '', stage = 'cold' }) {
+export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub, thread = [], persona = {}, goal = '', bizName = '', stage = 'cold', tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
 
@@ -97,7 +104,7 @@ export async function suggestReply({ message, senderName, company, channel, isHo
     ? 'Write formally. Full sentences. No slang. Professional sign-off.'
     : personaStyle === 'casual'
     ? 'Write casually. Short sentences. Friendly, warm tone. No formal greetings.'
-    : 'Write in natural Malaysian Manglish — mix BM and English naturally where it fits. Use "la", "boleh", "kan" sparingly and only when it feels organic. Never sound forced.';
+    : `Write in a natural, locale-appropriate informal style for ${market} — mix local language and English naturally where it fits. Use colloquial expressions sparingly and only when it feels organic. Never sound forced.`;
 
   const stageGuide = {
     cold:        'They just responded for the first time. Build rapport. Ask one curious question. No hard sell.',
@@ -128,7 +135,7 @@ export async function suggestReply({ message, senderName, company, channel, isHo
   const msg = await client.messages.create({
     model,
     max_tokens: 512,
-    system: `You are ${personaName}, ${personaRole} at ${bizName || 'our company'} in Malaysia. You are handling a ${channel} conversation with a potential client.
+    system: `You are ${personaName}, ${personaRole} at ${bizName || 'our company'} in ${market}. You are handling a ${channel} conversation with a potential client.
 
 ${styleGuide}
 
@@ -244,7 +251,9 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateSequence({ brief, persona, bizName, industry }) {
+export async function generateSequence({ brief, persona, bizName, industry, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
 
@@ -265,7 +274,7 @@ export async function generateSequence({ brief, persona, bizName, industry }) {
   const msg = await client.messages.create({
     model,
     max_tokens: 4096,
-    system: `You are an elite B2B outreach strategist applying Hormozi's $100M Offers, Challenger Sale, and SPIN Selling frameworks. You build complete multi-channel outreach sequences for Malaysian SMEs. Return only valid JSON.`,
+    system: `You are an elite B2B outreach strategist applying Hormozi's $100M Offers, Challenger Sale, and SPIN Selling frameworks. You build complete multi-channel outreach sequences for ${market} SMEs. Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `Build a complete 5-touchpoint outreach sequence for ${bizName}, a ${industry} company.
@@ -293,7 +302,7 @@ SEQUENCE RULES:
 
 For each touchpoint include:
 - Concise, professional copy tailored to the offer
-- Natural Malaysian B2B tone (not American aggressive)
+- Natural ${market} B2B tone (not American aggressive)
 - {{first_name}}, {{company}}, {{title}}, {{city}} variables where natural
 
 Also generate 5 common objection handlers (short, empathetic, pivoting responses).
@@ -404,13 +413,15 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateCampaignFromGoal({ bizId, goal, brief, industry }) {
+export async function generateCampaignFromGoal({ bizId, goal, brief, industry, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
     model,
     max_tokens: 1500,
-    system: `You are an expert B2B campaign strategist for Malaysian SMEs. Given a business brief and a plain-English campaign goal, generate a complete campaign configuration. Malaysian market context: WhatsApp is highly effective for SME owners, email works for corporate buyers, voice is best for high-ticket deals. Return only valid JSON.`,
+    system: `You are an expert B2B campaign strategist for ${market} SMEs. Given a business brief and a plain-English campaign goal, generate a complete campaign configuration. Local market context: WhatsApp is highly effective for SME owners, email works for corporate buyers, voice is best for high-ticket deals. Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `BUSINESS BRIEF:
@@ -456,13 +467,15 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function analyzeCampaignPerformance({ campaign, stats, brief }) {
+export async function analyzeCampaignPerformance({ campaign, stats, brief, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const msg = await client.messages.create({
     model,
     max_tokens: 800,
-    system: `You are a campaign performance analyst for B2B outreach in Malaysia. Analyse stats and return a grade, one key insight, and 1-3 concrete actions. Be direct and specific. Return only valid JSON.`,
+    system: `You are a campaign performance analyst for B2B outreach in ${market}. Analyse stats and return a grade, one key insight, and 1-3 concrete actions. Be direct and specific. Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `CAMPAIGN: "${campaign.name}"
@@ -473,7 +486,7 @@ DAYS RUNNING: ${stats.daysRunning}
 STATS:
 - Total leads: ${stats.totalLeads}
 - Messages sent: ${stats.totalSent}
-- Email open rate: ${stats.openRate}% (Malaysian B2B avg: 22%)
+- Email open rate: ${stats.openRate}% (avg: 22%)
 - WA response rate: ${stats.waResponseRate}% (benchmark: 8-15%)
 - Hot leads: ${stats.hotCount}
 - Email bounces: ${stats.emailBounces}
@@ -570,7 +583,9 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateCampaignAssets({ bizName, industry, offer, goal, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'], sampleLeads }) {
+export async function generateCampaignAssets({ bizName, industry, offer, goal, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'], sampleLeads, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-opus-4-7';
   const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
@@ -581,7 +596,7 @@ export async function generateCampaignAssets({ bizName, industry, offer, goal, d
   const msg = await client.messages.create({
     model,
     max_tokens: 4096,
-    system: `You are an elite B2B outreach copywriter for Malaysian SMEs applying Hormozi's $100M Offers framework. Generate campaign assets that will be reused across all leads — no lead-specific details, only {{variables}} for personalisation. Language: ${langLabel}. Return only valid JSON.`,
+    system: `You are an elite B2B outreach copywriter for ${market} SMEs applying Hormozi's $100M Offers framework. Generate campaign assets that will be reused across all leads — no lead-specific details, only {{variables}} for personalisation. Language: ${langLabel}. Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `Generate a full suite of outreach assets for this campaign.
@@ -593,7 +608,7 @@ GOAL: ${goal || ''}
 DREAM OUTCOME: ${dreamOutcome}
 TARGET AUDIENCE: ${targetAudience}
 TONE: ${tone}
-CHANNELS: ${channels.join(', ')}${sampleLeads?.length ? `\nSAMPLE LEADS (representative of this campaign's audience):\n${sampleLeads.slice(0,5).map(l => `- ${l.company} (${l.category||l.industry||'Unknown'}) in ${l.address||'Malaysia'}`).join('\n')}` : ''}
+CHANNELS: ${channels.join(', ')}${sampleLeads?.length ? `\nSAMPLE LEADS (representative of this campaign's audience):\n${sampleLeads.slice(0,5).map(l => `- ${l.company} (${l.category||l.industry||'Unknown'}) in ${l.address||market}`).join('\n')}` : ''}
 
 RULES:
 - Use {{opening_line}}, {{first_name}}, {{company}}, {{title}}, {{city}}, {{industry}} variables throughout
@@ -632,18 +647,20 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targetAudience, batch }) {
+export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targetAudience, batch, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-haiku-4-5-20251001';
 
   const leadsText = batch.map(l =>
-    `ID:${l.id} | ${l.name} | ${l.company} | ${l.category || 'Unknown'} | ${l.city || 'Malaysia'} | Rating:${l.rating || 0}`
+    `ID:${l.id} | ${l.name} | ${l.company} | ${l.category || 'Unknown'} | ${l.city || market} | Rating:${l.rating || 0}`
   ).join('\n');
 
   const msg = await client.messages.create({
     model,
     max_tokens: 4096,
-    system: `You are a hyper-personalisation engine for B2B outreach in Malaysia. Generate unique, specific opening lines for each lead. Each line must feel like it was written by a human who researched this specific company. Never generic. Return only valid JSON.`,
+    system: `You are a hyper-personalisation engine for B2B outreach in ${market}. Generate unique, specific opening lines for each lead. Each line must feel like it was written by a human who researched this specific company. Never generic. Return only valid JSON.`,
     messages: [{
       role: 'user',
       content: `CONTEXT:
@@ -662,7 +679,7 @@ For each lead write:
 Rules:
 - Never start with "I" — open with THEM
 - Never use "I hope this email finds you well" or any banned phrases
-- Malaysian B2B context: can reference local challenges (talent, logistics, digital transformation)
+- ${market} B2B context: can reference relevant local business challenges
 - Opening lines should make the reader feel "this person knows my business"
 
 Return JSON:
@@ -786,7 +803,9 @@ Return JSON:
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateOutreachAssets({ bizName, industry, offer, targetAudience, goal, tone, lang, channels, dreamOutcome }) {
+export async function generateOutreachAssets({ bizName, industry, offer, targetAudience, goal, tone, lang, channels, dreamOutcome, tenantConfig = {} }) {
+  const tc = tenantConfig;
+  const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
   const model = 'claude-opus-4-7';
 
@@ -797,7 +816,7 @@ export async function generateOutreachAssets({ bizName, industry, offer, targetA
   const msg = await client.messages.create({
     model,
     max_tokens: 4096,
-    system: `You are an expert B2B outreach copywriter for Malaysian SMEs. Write compelling, concise outreach content.
+    system: `You are an expert B2B outreach copywriter for ${market} SMEs. Write compelling, concise outreach content.
 Language: ${lang === 'BM' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Chinese (Simplified)' : 'English'}
 Tone: ${tone}
 Return only valid JSON, no extra text.`,

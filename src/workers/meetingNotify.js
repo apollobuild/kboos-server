@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { sendMessage as sendWa } from '../services/wati.js';
 import { sendEmail } from '../services/sendgrid.js';
+import { getTenantConfig } from '../services/tenantConfig.js';
 
 const prisma = new PrismaClient();
 
@@ -12,16 +13,16 @@ const REMINDER_LABELS = {
   t15min: 'in 15 minutes',
 };
 
-function formatDate(d) {
+function formatDate(d, timeZone = 'UTC') {
   if (!d) return 'TBD';
-  return new Date(d).toLocaleString('en-MY', {
-    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kuala_Lumpur',
-  });
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone,
+  }).format(new Date(d));
 }
 
-function buildMessages(type, meeting) {
+function buildMessages(type, meeting, timeZone = 'UTC') {
   const { leadName, bizName, meetingType, meetingDate } = meeting;
-  const dateStr = formatDate(meetingDate);
+  const dateStr = formatDate(meetingDate, timeZone);
 
   if (type === 'booking_confirmation') {
     return {
@@ -83,6 +84,9 @@ export async function handleMeetingNotify({ data }) {
   if (!meeting) return;
   if (['completed', 'no_show', 'cancelled'].includes(meeting.outcome)) return;
 
+  const tc = await getTenantConfig(meeting.tenantId);
+  const timeZone = tc.timezone || 'UTC';
+
   const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
   const notif = settings?.notifications || {};
   const reminderConfig = notif.reminderSequence || {};
@@ -90,7 +94,7 @@ export async function handleMeetingNotify({ data }) {
   // Booking confirmation always sends; other types respect config
   if (type !== 'booking_confirmation' && reminderConfig[type] === false) return;
 
-  const msgs = buildMessages(type, meeting);
+  const msgs = buildMessages(type, meeting, timeZone);
   const teamWhatsApp = notif.teamWhatsApp || [];
   const teamEmail = notif.teamEmail || [];
 

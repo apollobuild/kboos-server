@@ -33,7 +33,14 @@ router.post('/login', async (req, res, next) => {
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const payload = { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId } });
+    const tenantConfig = tenant ? {
+      country: tenant.country,
+      currency: tenant.currency,
+      timezone: tenant.timezone,
+      mobilePrefix: tenant.mobilePrefix,
+      languages: tenant.languages,
+    } : { country: 'MY', currency: 'MYR', timezone: 'Asia/Kuala_Lumpur', mobilePrefix: '+60', languages: ['EN', 'MS'] };
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId }, tenantConfig });
   } catch (e) { next(e); }
 });
 
@@ -67,9 +74,17 @@ router.post('/set-password', async (req, res, next) => {
       where: { id: user.id },
       data: { password: hash, inviteToken: null },
     });
+    const tenant = user.tenantId ? await prisma.tenant.findUnique({ where: { id: user.tenantId } }) : null;
+    const tenantConfig = tenant ? {
+      country: tenant.country,
+      currency: tenant.currency,
+      timezone: tenant.timezone,
+      mobilePrefix: tenant.mobilePrefix,
+      languages: tenant.languages,
+    } : { country: 'MY', currency: 'MYR', timezone: 'Asia/Kuala_Lumpur', mobilePrefix: '+60', languages: ['EN', 'MS'] };
     const payload = { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId: user.tenantId };
     const jwtToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId: user.tenantId } });
+    res.json({ token: jwtToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, bizId: user.bizId, tenantId: user.tenantId }, tenantConfig });
   } catch (e) { next(e); }
 });
 

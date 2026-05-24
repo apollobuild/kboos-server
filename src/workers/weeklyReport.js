@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { sendEmail } from '../services/sendgrid.js';
+import { getTenantConfig, formatCurrencyServer } from '../services/tenantConfig.js';
 
 const prisma = new PrismaClient();
 
@@ -78,7 +79,7 @@ export async function buildReportData(bizId) {
   };
 }
 
-export function buildHtml(data) {
+export function buildHtml(data, tc = {}) {
   const hex = resolveColor(data.biz.color);
   const weekOf = data.weekStart.toLocaleDateString('en-MY', { day: 'numeric', month: 'long' });
   const sentOn = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -155,15 +156,15 @@ export function buildHtml(data) {
   <tr><td style="padding:24px 36px 0">
     <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;font-weight:600">Revenue</div>
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
-      ${statCell(`RM ${data.closedRevenue.toLocaleString()}`, 'Closed This Week', '#f0fdf4', '#22c55e')}
-      ${statCell(`RM ${data.pipelineRevenue.toLocaleString()}`, 'Total Pipeline', '#f8f9fa', '#333')}
+      ${statCell(formatCurrencyServer(data.closedRevenue, tc.currency || 'MYR'), 'Closed This Week', '#f0fdf4', '#22c55e')}
+      ${statCell(formatCurrencyServer(data.pipelineRevenue, tc.currency || 'MYR'), 'Total Pipeline', '#f8f9fa', '#333')}
     </tr></table>
   </td></tr>` : ''}
 
   <tr><td style="padding:28px 36px">
     <div style="border-top:1px solid #eee;padding-top:20px;font-size:11px;color:#aaa;text-align:center;line-height:1.8">
       Powered by <strong style="color:${hex}">KBOOS</strong> by KOBIS Berhad &nbsp;·&nbsp;
-      Auto-sent every Monday at 8:00 AM (Malaysia Time)
+      Auto-sent every Monday at 8:00 AM (${tc.timezone || 'UTC'})
     </div>
   </td></tr>
 
@@ -183,7 +184,9 @@ export async function handleWeeklyReport({ data }) {
 
   if (!reportConfig.enabled && !force) return;
 
-  const html = buildHtml(reportData);
+  const biz = reportData.biz;
+  const tc = await getTenantConfig(biz.tenantId);
+  const html = buildHtml(reportData, tc);
   const weekOf = reportData.weekStart.toLocaleDateString('en-MY', { day: 'numeric', month: 'short' });
   const subject = `📊 Weekly Report: ${reportData.biz.name} — w/o ${weekOf}`;
 
