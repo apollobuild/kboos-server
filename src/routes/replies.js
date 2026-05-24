@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { suggestReply } from '../services/claude.js';
 import { sendMessage } from '../services/wati.js';
 import { sendEmail } from '../services/sendgrid.js';
+import { sendMessageToSession } from '../services/openwa.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -85,10 +86,10 @@ router.post('/:id/send-draft', requireAuth, async (req, res, next) => {
 
     const ch = (reply.channel || '').toLowerCase();
     const isWA = ch === 'wa' || ch === 'whatsapp';
+    const isWAConnect = ch === 'whatsapp_connect';
 
     // Append inbound + outbound to thread
     const thread = Array.isArray(reply.thread) ? reply.thread : [];
-    // Add the original inbound message if not already in thread
     const alreadyHasInbound = thread.some(t => t.role === 'lead' && t.content === reply.msg);
     if (!alreadyHasInbound) {
       thread.push({ role: 'lead', content: reply.msg, ts: reply.createdAt, channel: reply.channel });
@@ -98,10 +99,19 @@ router.post('/:id/send-draft', requireAuth, async (req, res, next) => {
     // Send
     let sendOk = false;
     try {
-      if (isWA && lead?.phone) {
+      if (isWAConnect && lead?.phone) {
+        // Find a connected OpenWA session for this tenant
+        const session = await prisma.openWASession.findFirst({
+          where: { tenantId: req.user.tenantId, status: 'connected' },
+        });
+        if (session) {
+          await sendMessageToSession(session.sessionName, lead.phone, message);
+          sendOk = true;
+        }
+      } else if (isWA && lead?.phone) {
         await sendMessage({ phone: lead.phone, message });
         sendOk = true;
-      } else if (!isWA && lead?.email) {
+      } else if (!isWA && !isWAConnect && lead?.email) {
         await sendEmail({ to: lead.email, subject: 'Re: Your inquiry', body: message });
         sendOk = true;
       }
