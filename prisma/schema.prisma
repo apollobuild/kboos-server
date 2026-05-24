@@ -391,12 +391,18 @@ model MeetingLog {
   bizId         String
   meetingDate   DateTime?
   meetingType   String    @default("discovery")
-  outcome       String?
+  outcome       String    @default("booked")
   notes         String    @default("")
   revenue       Float?
   closedAt      DateTime?
+  remindersSent Json      @default("[]")
+  leadName      String    @default("")
+  leadPhone     String    @default("")
+  leadEmail     String    @default("")
+  bizName       String    @default("")
   createdAt     DateTime  @default(now())
 
   @@index([campaignId])
   @@index([bizId])
+  @@index([meetingDate])
 }

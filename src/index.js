@@ -27,8 +27,41 @@ import searchRoutes from './routes/search.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
-import { startQueue } from './services/queue.js';
+import { startQueue, enqueue } from './services/queue.js';
 import { startWorkers } from './workers/index.js';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function scanMeetingReminders() {
+  try {
+    const now = new Date();
+    const in26h = new Date(now.getTime() + 26 * 3600000);
+    const upcoming = await prisma.meetingLog.findMany({
+      where: { meetingDate: { gte: now, lte: in26h }, outcome: { notIn: ['completed', 'no_show', 'cancelled'] } },
+    });
+    for (const m of upcoming) {
+      const hoursUntil = (new Date(m.meetingDate) - now) / 3600000;
+      const sent = Array.isArray(m.remindersSent) ? m.remindersSent : [];
+      const toSend = [];
+      if (!sent.includes('t24h') && hoursUntil <= 25 && hoursUntil > 4) toSend.push('t24h');
+      if (!sent.includes('t3h') && hoursUntil <= 3.5 && hoursUntil > 1.2) toSend.push('t3h');
+      if (!sent.includes('t1h') && hoursUntil <= 1.2 && hoursUntil > 0.3) toSend.push('t1h');
+      if (!sent.includes('t15min') && hoursUntil <= 0.3 && hoursUntil > 0) toSend.push('t15min');
+      for (const type of toSend) {
+        const newSent = [...sent, type];
+        await Promise.all([
+          enqueue('meeting-notify', { meetingId: m.id, type }).catch(() => {}),
+          prisma.meetingLog.update({ where: { id: m.id }, data: { remindersSent: newSent } }),
+        ]);
+        sent.push(type);
+      }
+    }
+    if (upcoming.length > 0) console.log(`[Meetings] Scanned ${upcoming.length} upcoming meetings`);
+  } catch (err) {
+    console.error('[Meetings] Reminder scan error:', err.message);
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -88,4 +121,8 @@ app.listen(PORT, async () => {
   cron.schedule('0 18 * * *', () => {
     clearExpired().then(n => console.log(`[Cache] Cleared ${n} expired AI insight entries`)).catch(() => {});
   });
+  // Meeting reminders — scan every 15 minutes
+  cron.schedule('*/15 * * * *', () => scanMeetingReminders());
+  // Startup scan
+  setTimeout(() => scanMeetingReminders(), 15000);
 });

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
+import { enqueue } from '../services/queue.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -23,9 +24,12 @@ router.post('/', requireAuth, async (req, res, next) => {
     const { leadId, campaignId, bizId, meetingDate, meetingType, notes } = req.body;
     if (!leadId) return res.status(400).json({ error: 'leadId required' });
 
-    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-    const campaign = campaignId ? await prisma.campaign.findUnique({ where: { id: campaignId } }) : null;
+    const [lead, campaign] = await Promise.all([
+      prisma.lead.findUnique({ where: { id: leadId } }),
+      campaignId ? prisma.campaign.findUnique({ where: { id: campaignId } }) : null,
+    ]);
     const resolvedBizId = bizId || campaign?.bizId || lead?.bizId;
+    const biz = resolvedBizId ? await prisma.business.findUnique({ where: { id: resolvedBizId }, select: { name: true } }) : null;
 
     const meeting = await prisma.meetingLog.create({
       data: {
@@ -36,11 +40,18 @@ router.post('/', requireAuth, async (req, res, next) => {
         meetingType: meetingType || 'discovery',
         notes: notes || '',
         outcome: 'booked',
+        leadName: lead?.name || '',
+        leadPhone: lead?.phone || '',
+        leadEmail: lead?.email || '',
+        bizName: biz?.name || campaign?.bizName || '',
       },
     });
 
-    // Mark lead as meeting_booked
-    await prisma.lead.update({ where: { id: leadId }, data: { status: 'meeting_booked', meetingBooked: true } });
+    // Mark lead as meeting_booked and enqueue booking confirmation
+    await Promise.all([
+      prisma.lead.update({ where: { id: leadId }, data: { status: 'meeting_booked', meetingBooked: true } }),
+      enqueue('meeting-notify', { meetingId: meeting.id, type: 'booking_confirmation' }).catch(() => {}),
+    ]);
 
     res.json(meeting);
   } catch (e) { next(e); }
@@ -57,6 +68,11 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
     if (revenue !== undefined) update.revenue = revenue;
     if (meetingDate) update.meetingDate = new Date(meetingDate);
     if (closedAt) update.closedAt = new Date(closedAt);
+
+    // Stop all future reminders if meeting ended
+    if (['completed', 'no_show', 'cancelled'].includes(outcome)) {
+      update.remindersSent = ['booking_confirmation', 't24h', 't3h', 't1h', 't15min'];
+    }
 
     const meeting = await prisma.meetingLog.update({ where: { id }, data: update });
 

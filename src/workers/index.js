@@ -12,6 +12,7 @@ import { handleScrape } from './scrape.js';
 import { handleQualify } from './qualify.js';
 import { handleAiScore } from './aiScore.js';
 import { handleOptimize } from './optimize.js';
+import { handleMeetingNotify } from './meetingNotify.js';
 
 export async function startWorkers() {
   await registerWorker('lead-validation', 4, handleValidation);
@@ -27,5 +28,6 @@ export async function startWorkers() {
   await registerWorker('lead-ai-score', 3, handleAiScore);
   await registerWorker('optimization-loop', 1, handleOptimize);
   await registerWorker('auto-reply', 3, handleAutoReply);
-  console.log('[Workers] All 13 workers registered');
+  await registerWorker('meeting-notify', 2, handleMeetingNotify);
+  console.log('[Workers] All 14 workers registered');
 }
