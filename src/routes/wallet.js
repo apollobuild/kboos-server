@@ -179,6 +179,8 @@ const SG_PER_EMAIL = 0.0004;
 router.get('/spend-summary', requireAuth, async (req, res, next) => {
   try {
     const tid = req.user.tenantId;
+    // Include legacy records stored before tenantId was tracked (tagged as 'default')
+    const tidFilter = tid !== 'default' ? { in: [tid, 'default'] } : 'default';
     const now = new Date();
     const allTime = req.query.all === '1';
     const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -191,20 +193,20 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
 
     // Claude — exact from ApiUsageLog (real token costs)
     const claudeLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'claude', tenantId: tid, ...dateFilter('createdAt') },
+      where: { service: 'claude', tenantId: tidFilter, ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
       _count: { id: true },
     });
 
     const scraperLog = await prisma.apiUsageLog.aggregate({
-      where: { service: 'outscraper', tenantId: tid, ...dateFilter('createdAt') },
+      where: { service: 'outscraper', tenantId: tidFilter, ...dateFilter('createdAt') },
       _sum: { costUsd: true, units: true },
     });
 
     const [emailCount, waCount, enrichedCount] = await Promise.all([
-      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', tenantId: tid, ...dateFilter('sentAt') } }),
-      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', tenantId: tid, ...dateFilter('sentAt') } }),
-      prisma.lead.count({ where: { enriched: true, tenantId: tid, ...dateFilter('enrichedAt') } }),
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', tenantId: tidFilter, ...dateFilter('sentAt') } }),
+      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', tenantId: tidFilter, ...dateFilter('sentAt') } }),
+      prisma.lead.count({ where: { enriched: true, tenantId: tidFilter, ...dateFilter('enrichedAt') } }),
     ]);
 
     // Vapi — fetch real call costs from their API
