@@ -337,17 +337,19 @@ router.post('/campaigns/:id/launch', requireAuth, async (req, res, next) => {
 
         await prisma.openWASession.update({ where: { id: sess.id }, data: { sentToday: { increment: 1 } } });
 
-        // 30s gap between messages (safety spread)
+        // 30s gap only after successful sends (no delay on errors)
         if (sent < pendingLeads.length) await new Promise(r => setTimeout(r, 30000));
       } catch (err) {
         errors.push({ phone: lead.phone, error: err.message });
         await prisma.openWASession.update({ where: { id: targetSession.id }, data: { errorCount: { increment: 1 }, healthScore: { decrement: 2 } } }).catch(() => {});
+        // If first send fails, it's likely a session issue — abort early to avoid waiting 30s × N
+        if (sent === 0 && errors.length >= 2) break;
       }
     }
 
     await prisma.wAConnectCampaign.update({
       where: { id: campaign.id },
-      data: { sentCount: { increment: sent }, status: 'active', leadStatuses },
+      data: { sentCount: { increment: sent }, status: sent > 0 ? 'active' : 'draft', leadStatuses },
     });
 
     res.json({ sent, errors, remaining: remaining - sent, warmupWeek: targetSession.warmupEnabled ? targetSession.warmupWeek + 1 : null });
