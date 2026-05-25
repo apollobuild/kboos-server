@@ -274,6 +274,16 @@ router.post('/campaigns/:id/launch', requireAuth, async (req, res, next) => {
     const targetSession = allSessions.find(s => s.id === campaign.sessionId) || allSessions[0];
     if (!targetSession) return res.status(400).json({ error: 'No connected WhatsApp number' });
 
+    // Pre-flight: verify WAHA session is actually WORKING before attempting sends
+    const liveStatus = await getNamedSessionStatus(targetSession.sessionName).catch(() => null);
+    if (!liveStatus || liveStatus.status !== 'WORKING') {
+      await prisma.openWASession.update({ where: { id: targetSession.id }, data: { status: 'disconnected' } }).catch(() => {});
+      return res.status(400).json({
+        error: `WhatsApp session is ${liveStatus?.status || 'unreachable'} — go to Settings → WA Connect and reconnect your number before launching.`,
+        sessionStatus: liveStatus?.status,
+      });
+    }
+
     // Reset daily counts if needed
     const now = new Date();
     const resetPromises = allSessions.map(async s => {
