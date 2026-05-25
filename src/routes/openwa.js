@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getApiKey, saveApiKey } from '../services/apiKeys.js';
-import { sendMessageToSession, testConnection, getQR, startNamedSession, stopNamedSession, getNamedSessionStatus, getWarmupLimit } from '../services/openwa.js';
+import { sendMessageToSession, testConnection, getQR, startNamedSession, stopNamedSession, disconnectNamedSession, getNamedSessionStatus, getWarmupLimit } from '../services/openwa.js';
 import { PrismaClient } from '@prisma/client';
 
 const router = Router();
@@ -86,6 +86,16 @@ router.post('/sessions', requireAdmin, async (req, res, next) => {
     const { label, phone, dailyLimit } = req.body;
     if (!label) return res.status(400).json({ error: 'Label required' });
     const sessionName = 'default'; // WAHA Core only supports 'default' session name
+
+    // Logout + clear any existing session so new number gets a fresh QR
+    const existing = await prisma.openWASession.findFirst({
+      where: { tenantId: req.user.tenantId, sessionName },
+    });
+    if (existing) {
+      await disconnectNamedSession(sessionName).catch(() => {});
+      await prisma.openWASession.delete({ where: { id: existing.id } }).catch(() => {});
+    }
+
     const session = await prisma.openWASession.create({
       data: { tenantId: req.user.tenantId, label, phone: phone || null, sessionName, dailyLimit: dailyLimit || 200 },
     });
@@ -111,7 +121,7 @@ router.patch('/sessions/:id', requireAdmin, async (req, res, next) => {
 router.delete('/sessions/:id', requireAdmin, async (req, res, next) => {
   try {
     const s = await prisma.openWASession.findUnique({ where: { id: req.params.id } });
-    if (s) await stopNamedSession(s.sessionName).catch(() => {});
+    if (s) await disconnectNamedSession(s.sessionName).catch(() => {});
     await prisma.openWASession.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
   } catch (e) { next(e); }
@@ -148,7 +158,7 @@ router.post('/sessions/:id/disconnect', requireAdmin, async (req, res, next) => 
   try {
     const s = await prisma.openWASession.findUnique({ where: { id: req.params.id } });
     if (s) {
-      await stopNamedSession(s.sessionName).catch(() => {});
+      await disconnectNamedSession(s.sessionName).catch(() => {});
       await prisma.openWASession.update({ where: { id: s.id }, data: { status: 'disconnected', phone: null } });
     }
     res.json({ ok: true });

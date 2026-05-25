@@ -182,6 +182,26 @@ export async function startNamedSession(sessionName) {
   throw new Error('QR code not ready after 60s — check Railway → WAHA service logs for errors');
 }
 
+// WAHA API: POST /api/{session}/auth/logout — clears saved credentials so next connect needs fresh QR
+export async function logoutNamedSession(sessionName) {
+  try {
+    const { baseUrl, apiKey } = await getConfig();
+    const h = makeHeaders(apiKey);
+    // Try v2 endpoint first
+    const r = await fetch(`${baseUrl}/api/${sessionName}/auth/logout`, {
+      method: 'POST', headers: h, signal: AbortSignal.timeout(5000),
+    });
+    if (r.ok) { wlog(`Logged out ${sessionName}`); return true; }
+    // v1 fallback
+    await fetch(`${baseUrl}/api/sessions/logout`, {
+      method: 'POST', headers: h,
+      body: JSON.stringify({ name: sessionName }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return true;
+  } catch (e) { wlog(`Logout error: ${e.message}`); return false; }
+}
+
 // WAHA API: POST /api/sessions/{name}/stop
 export async function stopNamedSession(sessionName) {
   try {
@@ -193,6 +213,13 @@ export async function stopNamedSession(sessionName) {
     });
     return res.ok;
   } catch { return false; }
+}
+
+// Full disconnect: logout (clears credentials) then stop
+export async function disconnectNamedSession(sessionName) {
+  await logoutNamedSession(sessionName).catch(() => {});
+  await new Promise(r => setTimeout(r, 1000));
+  await stopNamedSession(sessionName).catch(() => {});
 }
 
 // WAHA API: POST /api/sendText  { chatId, text, session }
