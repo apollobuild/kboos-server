@@ -9,7 +9,7 @@ const CLAUDE_RATES = {
   'claude-opus-4-7':           { input: 15.00 / 1_000_000, output: 75.00 / 1_000_000 },
 };
 
-export async function logClaude({ model, inputTokens, outputTokens, action }) {
+export async function logClaude({ model, inputTokens, outputTokens, action, tenantId = 'default' }) {
   const rates = CLAUDE_RATES[model] || CLAUDE_RATES['claude-sonnet-4-6'];
   const costUsd = (inputTokens * rates.input) + (outputTokens * rates.output);
   await prisma.apiUsageLog.create({
@@ -18,15 +18,16 @@ export async function logClaude({ model, inputTokens, outputTokens, action }) {
       action: action || 'generate',
       units: inputTokens + outputTokens,
       costUsd,
+      tenantId,
       meta: { model, inputTokens, outputTokens },
     },
   }).catch(e => console.error('[CostLogger] Claude:', e.message));
 }
 
 // Outscraper: ~$0.001/result on standard plan
-export async function logScraper({ records }) {
+export async function logScraper({ records, tenantId = 'default' }) {
   const costUsd = records * 0.001;
   await prisma.apiUsageLog.create({
-    data: { service: 'outscraper', action: 'search', units: records, costUsd, meta: {} },
+    data: { service: 'outscraper', action: 'search', units: records, costUsd, tenantId, meta: {} },
   }).catch(e => console.error('[CostLogger] Scraper:', e.message));
 }

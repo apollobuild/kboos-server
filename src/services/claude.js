@@ -15,7 +15,7 @@ function parseJSON(text) {
   return JSON.parse(cleaned);
 }
 
-export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang, tenantConfig = {} }) {
+export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -43,11 +43,11 @@ Return JSON with exactly these 4 keys. All values must be plain strings (no nest
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_brief' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_brief', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateEmail({ bizName, campaignName, prompt, lead, tenantConfig = {} }) {
+export async function generateEmail({ bizName, campaignName, prompt, lead, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -85,12 +85,12 @@ Return JSON with exactly these keys:
 }`
     }]
   });
-  logClaude({ model: emailModel, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_email' });
+  logClaude({ model: emailModel, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_email', tenantId });
   const parsed = parseJSON(msg.content[0].text);
   return { ...parsed, subject: Array.isArray(parsed.subjects) ? parsed.subjects[0] : parsed.subject || '' };
 }
 
-export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub, thread = [], persona = {}, goal = '', bizName = '', stage = 'cold', tenantConfig = {} }) {
+export async function suggestReply({ message, senderName, company, channel, isHot, isUnsub, thread = [], persona = {}, goal = '', bizName = '', stage = 'cold', tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -174,7 +174,7 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_reply' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_reply', tenantId });
 
   try {
     const cleaned = msg.content[0].text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
@@ -184,7 +184,7 @@ Return JSON:
   }
 }
 
-export async function generateFromOffer({ bizName, industry, service, dreamOutcome, proof, timeToResult, effortRemoved, riskReversal, lang }) {
+export async function generateFromOffer({ bizName, industry, service, dreamOutcome, proof, timeToResult, effortRemoved, riskReversal, lang, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const langLabel = lang === 'MS' ? 'Bahasa Malaysia' : lang === 'ZH' ? 'Mandarin Chinese' : 'English';
@@ -247,11 +247,11 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_from_offer' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_from_offer', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateSequence({ brief, persona, bizName, industry, tenantConfig = {} }) {
+export async function generateSequence({ brief, persona, bizName, industry, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -364,11 +364,11 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_sequence' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_sequence', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function regenerateTouchpoint({ brief, persona, bizName, touchpoint }) {
+export async function regenerateTouchpoint({ brief, persona, bizName, touchpoint, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-haiku-4-5-20251001';
 
@@ -409,11 +409,11 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'regen_touchpoint' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'regen_touchpoint', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateCampaignFromGoal({ bizId, goal, brief, industry, tenantConfig = {} }) {
+export async function generateCampaignFromGoal({ bizId, goal, brief, industry, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -463,11 +463,11 @@ Return JSON:
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function analyzeCampaignPerformance({ campaign, stats, brief, tenantConfig = {} }) {
+export async function analyzeCampaignPerformance({ campaign, stats, brief, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -507,11 +507,11 @@ Return JSON:
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'campaign_performance' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'campaign_performance', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function prioritizeLeads({ leads, campaign, brief }) {
+export async function prioritizeLeads({ leads, campaign, brief, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-haiku-4-5-20251001';
   const leadsSnapshot = leads.map(l => ({
@@ -543,11 +543,11 @@ For each lead return: priorityScore(0-100), signals(1-3 strings), suggestedActio
 Return JSON: {"ranked":[{"leadId":123,"priorityScore":85,"signals":["..."],"suggestedAction":"...","prewrittenMessage":"..."}]}`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'prioritize_leads' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'prioritize_leads', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateSmartFollowup({ lead, campaign, brief, history, channel }) {
+export async function generateSmartFollowup({ lead, campaign, brief, history, channel, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-haiku-4-5-20251001';
   const msg = await client.messages.create({
@@ -579,11 +579,11 @@ Return JSON:
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_followup' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'smart_followup', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateCampaignAssets({ bizName, industry, offer, goal, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'], sampleLeads, tenantConfig = {} }) {
+export async function generateCampaignAssets({ bizName, industry, offer, goal, dreamOutcome, targetAudience, tone, lang, channels = ['wa', 'email'], sampleLeads, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -643,11 +643,11 @@ Return JSON:
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign_assets' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_campaign_assets', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targetAudience, batch, tenantConfig = {} }) {
+export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targetAudience, batch, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -694,7 +694,7 @@ Return JSON:
 }`
     }]
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'batch_personalize' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'batch_personalize', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
@@ -708,7 +708,7 @@ export async function testConnection(apiKey) {
   return !!msg.content[0].text;
 }
 
-export async function scoreLeadsWithAI({ leads, campaign }) {
+export async function scoreLeadsWithAI({ leads, campaign, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
 
@@ -753,11 +753,11 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'ai_score_leads' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'ai_score_leads', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateOptimizationSuggestions({ campaign, metrics }) {
+export async function generateOptimizationSuggestions({ campaign, metrics, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
 
@@ -799,11 +799,11 @@ Return JSON:
     }]
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'optimization_suggestions' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'optimization_suggestions', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateOutreachAssets({ bizName, industry, offer, targetAudience, goal, tone, lang, channels, dreamOutcome, tenantConfig = {} }) {
+export async function generateOutreachAssets({ bizName, industry, offer, targetAudience, goal, tone, lang, channels, dreamOutcome, tenantConfig = {}, tenantId = 'default' }) {
   const tc = tenantConfig;
   const market = getMarketName(tc.country || 'MY');
   const client = await getClient();
@@ -847,11 +847,11 @@ Return JSON:
     }],
   });
 
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_outreach_assets' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_outreach_assets', tenantId });
   return parseJSON(msg.content[0].text);
 }
 
-export async function generateWASequence({ goal, steps = 3, tenantConfig = {} }) {
+export async function generateWASequence({ goal, steps = 3, tenantConfig = {}, tenantId = 'default' }) {
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const market = getMarketName(tenantConfig.country);
@@ -881,6 +881,6 @@ Return JSON array:
 Only return valid JSON, no extra text.`,
     }],
   });
-  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_wa_sequence' });
+  logClaude({ model, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens, action: 'generate_wa_sequence', tenantId });
   return parseJSON(msg.content[0].text);
 }

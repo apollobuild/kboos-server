@@ -10,20 +10,20 @@ const prisma = new PrismaClient();
 const router = Router();
 
 router.post('/generate-brief', requireAuth, async (req, res, next) => {
-  try { res.json(await generateBrief(req.body)); } catch (e) { next(e); }
+  try { res.json(await generateBrief({ ...req.body, tenantId: req.user?.tenantId })); } catch (e) { next(e); }
 });
 
 router.post('/generate-email', requireAuth, async (req, res, next) => {
-  try { res.json(await generateEmail(req.body)); } catch (e) { next(e); }
+  try { res.json(await generateEmail({ ...req.body, tenantId: req.user?.tenantId })); } catch (e) { next(e); }
 });
 
 router.post('/generate-from-offer', requireAuth, async (req, res, next) => {
-  try { res.json(await generateFromOffer(req.body)); } catch (e) { next(e); }
+  try { res.json(await generateFromOffer({ ...req.body, tenantId: req.user?.tenantId })); } catch (e) { next(e); }
 });
 
 router.post('/suggest-reply', requireAuth, async (req, res, next) => {
   try {
-    const result = await suggestReply(req.body);
+    const result = await suggestReply({ ...req.body, tenantId: req.user?.tenantId });
     // suggestReply now returns { reply, stage, escalate } — extract text for backward compat
     const reply = typeof result === 'string' ? result : result.reply;
     res.json({ reply });
@@ -45,7 +45,7 @@ router.post('/generate-campaign', requireAuth, async (req, res, next) => {
     const biz = await prisma.business.findUnique({ where: { id: bizId } });
     const seq = await prisma.businessSequence.findUnique({ where: { bizId } });
     const brief = seq?.brief || {};
-    const result = await generateCampaignFromGoal({ bizId, goal, brief, industry: biz?.industry || '' });
+    const result = await generateCampaignFromGoal({ bizId, goal, brief, industry: biz?.industry || '', tenantId: req.user?.tenantId });
     res.json(result);
   } catch (e) { next(e); }
 });
@@ -74,7 +74,7 @@ router.get('/campaign-performance/:id', requireAuth, async (req, res, next) => {
     if (cached) return res.json({ ...cached, fromCache: true });
 
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: campaign.bizId } });
-    const result = await analyzeCampaignPerformance({ campaign, stats, brief: seq?.brief || {} });
+    const result = await analyzeCampaignPerformance({ campaign, stats, brief: seq?.brief || {}, tenantId: req.user?.tenantId });
     await setCache('campaign', String(campaignId), 'performance', result, inputHash, 4);
     res.json(result);
   } catch (e) { next(e); }
@@ -95,7 +95,7 @@ router.post('/prioritize-leads', requireAuth, async (req, res, next) => {
     if (cached) return res.json({ ...cached, fromCache: true });
 
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: campaign.bizId } });
-    const result = await prioritizeLeads({ leads, campaign, brief: seq?.brief || {} });
+    const result = await prioritizeLeads({ leads, campaign, brief: seq?.brief || {}, tenantId: req.user?.tenantId });
 
     // persist scores to DB
     if (result.ranked) {
@@ -113,7 +113,7 @@ router.post('/prioritize-leads', requireAuth, async (req, res, next) => {
 });
 
 router.post('/generate-assets', requireAuth, async (req, res, next) => {
-  try { res.json(await generateOutreachAssets(req.body)); } catch (e) { next(e); }
+  try { res.json(await generateOutreachAssets({ ...req.body, tenantId: req.user?.tenantId })); } catch (e) { next(e); }
 });
 
 router.post('/smart-followup', requireAuth, async (req, res, next) => {
@@ -136,7 +136,7 @@ router.post('/smart-followup', requireAuth, async (req, res, next) => {
     });
     const history = actions.map(a => `Day ${a.stepDay}: ${a.type} — ${a.status}`).join('\n');
 
-    const result = await generateSmartFollowup({ lead, campaign: campaign || {}, brief: seq?.brief || {}, history, channel });
+    const result = await generateSmartFollowup({ lead, campaign: campaign || {}, brief: seq?.brief || {}, history, channel, tenantId: req.user?.tenantId });
     res.json(result);
   } catch (e) { next(e); }
 });
@@ -150,7 +150,7 @@ router.post('/wa-sequence', requireAuth, async (req, res, next) => {
     const cached = await getCache('wa-sequence', 'global', 'sequence', key);
     if (cached) return res.json(cached);
 
-    const result = await generateWASequence({ goal, steps });
+    const result = await generateWASequence({ goal, steps, tenantId: req.user?.tenantId });
     await setCache('wa-sequence', 'global', 'sequence', result, key, 60);
     res.json(result);
   } catch (e) { next(e); }
