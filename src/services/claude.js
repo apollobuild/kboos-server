@@ -855,12 +855,19 @@ export async function generateWASequence({ goal, steps = 3, tenantConfig = {}, t
   const client = await getClient();
   const model = 'claude-sonnet-4-6';
   const market = getMarketName(tenantConfig.country);
+
+  const dayMap = [1, 3, 7];
+  const labelMap = ['Intro', 'Follow-up', 'Final'];
+  const exampleItems = Array.from({ length: steps }, (_, i) =>
+    `  { "day": ${dayMap[i]}, "label": "${labelMap[i]}", "message": "..." }`
+  ).join(',\n');
+
   const msg = await client.messages.create({
     model,
     max_tokens: 1200,
     messages: [{
       role: 'user',
-      content: `You are a WhatsApp outreach copywriter. Generate a ${steps}-message follow-up sequence for this goal:
+      content: `You are a WhatsApp outreach copywriter. Generate EXACTLY ${steps} message${steps > 1 ? 's' : ''} for this goal:
 
 Goal: ${goal}
 Market: ${market || 'general B2B'}
@@ -869,14 +876,12 @@ Rules:
 - Each message under 60 words
 - Conversational, not salesy
 - Use {name} for lead name, {company} for company name
-- Space messages over days (suggest delay for each)
 - Each message should feel natural on WhatsApp
+- Return EXACTLY ${steps} item${steps > 1 ? 's' : ''} in the array — no more, no less
 
-Return JSON array:
+Return JSON array with exactly ${steps} item${steps > 1 ? 's' : ''}:
 [
-  { "day": 1, "label": "Intro", "message": "..." },
-  { "day": 3, "label": "Follow-up", "message": "..." },
-  { "day": 7, "label": "Final", "message": "..." }
+${exampleItems}
 ]
 Only return valid JSON, no extra text.`,
     }],
