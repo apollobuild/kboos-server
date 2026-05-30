@@ -46,7 +46,7 @@ router.get('/test-connection/:api', requireAuth, async (req, res, next) => {
     else if (api === 'outscraper') ok = await testOutscraper(key).catch(() => false);
     else if (api === 'vapi') ok = await testVapi(key).catch(() => false);
     else ok = !!key;
-    res.json({ ok });
+    res.json({ ok, error: ok ? undefined : 'Connection test failed — check your API key and URL' });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
