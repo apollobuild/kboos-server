@@ -127,8 +127,8 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
 
     await prisma.campaignPipeline.upsert({
       where: { campaignId },
-      update: { stage: 'qualifying', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date(), lastError: null },
-      create: { campaignId, stage: 'qualifying', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date() },
+      update: { stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date(), lastError: null },
+      create: { campaignId, stage: 'scraped', scrapeTotal: newTotal, scrapeComplete: newTotal, scrapedAt: new Date() },
     });
 
     await prisma.activity.create({

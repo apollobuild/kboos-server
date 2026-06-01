@@ -43,7 +43,7 @@ export async function handlePersonalize(job) {
     const isDone = newComplete >= total;
     await prisma.campaignPipeline.update({
       where: { campaignId },
-      data: { personalizeComplete: newComplete, ...(isDone ? { stage: 'personalized', personalizedAt: new Date() } : {}) },
+      data: { personalizeComplete: newComplete, ...(isDone ? { stage: 'channels_configured', personalizedAt: new Date() } : {}) },
     });
   }
 

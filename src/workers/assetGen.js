@@ -39,7 +39,7 @@ export async function handleAssetGen(job) {
     ...(assets.voice ? Object.values(assets.voice).map(v => ({ ...v, channel: 'voice' })) : []),
   ];
 
-  // Clear old assets for this campaign
+  // Clear old assets only AFTER generation succeeded (preserves assets if generation throws)
   await prisma.campaignAsset.deleteMany({ where: { campaignId } });
 
   for (const a of allAssets) {

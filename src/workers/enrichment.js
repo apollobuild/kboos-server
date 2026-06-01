@@ -40,7 +40,7 @@ export async function handleEnrichment(job) {
     const isDone = newComplete >= total;
     await prisma.campaignPipeline.update({
       where: { campaignId },
-      data: { enrichComplete: newComplete, ...(isDone ? { stage: 'enriched', enrichedAt: new Date() } : {}) },
+      data: { enrichComplete: newComplete, ...(isDone ? { stage: 'enrichment_complete', enrichedAt: new Date() } : {}) },
     });
   }
 }
