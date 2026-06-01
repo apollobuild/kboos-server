@@ -139,7 +139,7 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/qualify — enqueue qualify job
+// POST /pipeline/:campaignId/qualify — run scoring inline (pure JS, no queue needed)
 router.post('/:campaignId/qualify', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
@@ -152,8 +152,35 @@ router.post('/:campaignId/qualify', requireAuth, async (req, res, next) => {
       create: { campaignId, stage: 'qualifying' },
     });
 
-    await enqueue('lead-qualify', { campaignId }, { priority: 2 });
-    res.json({ ok: true, stage: 'qualifying' });
+    const { scoreLeadQuality } = await import('../services/leadScoring.js');
+    const leads = await prisma.lead.findMany({
+      where: { campaignId },
+      select: { id: true, phone: true, email: true, website: true, category: true, company: true, title: true, address: true, rating: true, reviewCount: true },
+    });
+
+    const cfg = campaign.config || {};
+    let tierA = 0, tierB = 0, tierC = 0;
+
+    // Score all leads and batch update
+    const updates = leads.map(lead => {
+      const result = scoreLeadQuality(lead, cfg);
+      if (result.tier === 'A') tierA++;
+      else if (result.tier === 'B') tierB++;
+      else tierC++;
+      return prisma.lead.update({
+        where: { id: lead.id },
+        data: { rawQualityScore: result.qualityScore, tier: result.tier, validationScore: result.qualityScore, status: 'qualified' },
+      });
+    });
+
+    await Promise.all(updates);
+
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { stage: 'ready_for_enrichment', tierA, tierB, tierC, qualifyTotal: leads.length, qualifyComplete: leads.length, qualifiedAt: new Date() },
+    });
+
+    res.json({ ok: true, stage: 'ready_for_enrichment', tierA, tierB, tierC, total: leads.length });
   } catch (e) { next(e); }
 });
 

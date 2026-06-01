@@ -171,8 +171,8 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, async () => {
-  console.log(`KBOOS server running on port ${PORT}`);
+// Start queue BEFORE accepting requests to avoid race conditions
+(async () => {
   try {
     await startQueue();
     await startWorkers();
@@ -180,6 +180,10 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('[Queue] Failed to start workers:', err.message);
   }
+})();
+
+app.listen(PORT, () => {
+  console.log(`KBOOS server running on port ${PORT}`);
   // Campaign execution engine — every hour on the hour
   cron.schedule('0 * * * *', () => {
     console.log('[Engine] Hourly tick');
