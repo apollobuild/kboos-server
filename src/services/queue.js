@@ -2,6 +2,24 @@ import { PgBoss } from 'pg-boss';
 
 let boss = null;
 
+const QUEUE_NAMES = [
+  'lead-qualify',
+  'lead-enrichment',
+  'lead-ai-score',
+  'ai-asset-gen',
+  'lead-personalize',
+  'lead-scrape',
+  'outreach-email',
+  'outreach-wa',
+  'outreach-voice',
+  'channel-eligibility',
+  'optimization-loop',
+  'lead-validation',
+  'auto-reply',
+  'meeting-notify',
+  'weekly-report',
+];
+
 export async function startQueue() {
   boss = new PgBoss({
     connectionString: process.env.DATABASE_URL,
@@ -10,7 +28,20 @@ export async function startQueue() {
   });
   boss.on('error', err => console.error('[Queue] pg-boss error:', err.message));
   await boss.start();
-  console.log('[Queue] pg-boss started');
+
+  // pg-boss v12 requires explicit queue creation before send/work
+  for (const name of QUEUE_NAMES) {
+    try {
+      await boss.createQueue(name);
+    } catch (e) {
+      // Queue already exists — safe to ignore
+      if (!e.message?.includes('already exists')) {
+        console.warn(`[Queue] createQueue(${name}):`, e.message);
+      }
+    }
+  }
+
+  console.log('[Queue] pg-boss started, all queues ready');
   return boss;
 }
 
@@ -36,9 +67,8 @@ export async function registerWorker(queueName, concurrency, handler) {
 
 export async function getQueueStats() {
   const q = getQueue();
-  const queues = ['lead-qualify','lead-enrichment','lead-ai-score','ai-asset-gen','lead-personalize','lead-scrape','outreach-email','outreach-wa','outreach-voice','channel-eligibility','optimization-loop'];
   const stats = {};
-  for (const name of queues) {
+  for (const name of QUEUE_NAMES) {
     try {
       const qs = await q.getQueueStats(name);
       stats[name] = qs?.size ?? 0;
