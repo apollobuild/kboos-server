@@ -221,7 +221,7 @@ router.post('/:campaignId/select-enrichment-tiers', requireAuth, async (req, res
   } catch (e) { next(e); }
 });
 
-// POST /pipeline/:campaignId/enrich — manual trigger: enqueue enrichment for approved tiers
+// POST /pipeline/:campaignId/enrich — run enrichment inline (gracefully skips if no Apollo key)
 router.post('/:campaignId/enrich', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
@@ -230,19 +230,65 @@ router.post('/:campaignId/enrich', requireAuth, async (req, res, next) => {
 
     const leads = await prisma.lead.findMany({
       where: { campaignId, tier: { in: approvedTiers } },
-      select: { id: true },
+      select: { id: true, name: true, company: true, address: true, email: true, phone: true, title: true },
     });
 
     if (!leads.length) return res.status(400).json({ error: 'No leads in approved tiers to enrich' });
 
-    const totalToEnrich = leads.length;
     await prisma.campaignPipeline.update({
       where: { campaignId },
-      data: { stage: 'enriching', enrichTotal: totalToEnrich, enrichComplete: 0 },
+      data: { stage: 'enriching', enrichTotal: leads.length, enrichComplete: 0 },
     });
 
-    await enqueueBatch('lead-enrichment', leads.map(l => ({ leadId: l.id, campaignId })));
-    res.json({ ok: true, stage: 'enriching', total: totalToEnrich });
+    // Check Apollo key — if missing, skip enrichment and advance stage
+    const { getApiKey } = await import('../services/apiKeys.js');
+    const apolloKey = await getApiKey('apollo').catch(() => null);
+
+    if (!apolloKey) {
+      await prisma.lead.updateMany({ where: { id: { in: leads.map(l => l.id) } }, data: { enriched: true, enrichedAt: new Date(), enrichmentNote: 'Skipped — no Apollo key' } });
+      await prisma.campaignPipeline.update({
+        where: { campaignId },
+        data: { stage: 'enrichment_complete', enrichComplete: leads.length, enrichedAt: new Date() },
+      });
+      return res.json({ ok: true, stage: 'enrichment_complete', total: leads.length, skipped: leads.length, note: 'No Apollo key — enrichment skipped' });
+    }
+
+    // Run all leads in parallel — complete in seconds instead of waiting for queue
+    const { enrichLead } = await import('../services/apollo.js');
+    let enriched = 0, skipped = 0;
+
+    await Promise.all(leads.map(async (lead) => {
+      try {
+        const result = await enrichLead({ companyName: lead.company, city: lead.address?.split(',')[1]?.trim() || '' });
+        if (result) {
+          await prisma.lead.update({
+            where: { id: lead.id },
+            data: {
+              name: result.decisionMakerName || lead.name,
+              title: result.title || lead.title,
+              email: result.email || lead.email,
+              phone: result.phone || lead.phone,
+              enriched: true, enrichedAt: new Date(),
+              enrichmentNote: 'Apollo: found',
+            },
+          });
+          enriched++;
+        } else {
+          await prisma.lead.update({ where: { id: lead.id }, data: { enriched: true, enrichedAt: new Date(), enrichmentNote: 'No match' } });
+          skipped++;
+        }
+      } catch {
+        await prisma.lead.update({ where: { id: lead.id }, data: { enriched: true, enrichedAt: new Date(), enrichmentNote: 'Error — skipped' } });
+        skipped++;
+      }
+    }));
+
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { stage: 'enrichment_complete', enrichComplete: leads.length, enrichedAt: new Date() },
+    });
+
+    res.json({ ok: true, stage: 'enrichment_complete', total: leads.length, enriched, skipped });
   } catch (e) { next(e); }
 });
 
