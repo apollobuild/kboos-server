@@ -57,8 +57,10 @@ export async function enqueue(queueName, data, opts = {}) {
 }
 
 export async function enqueueBatch(queueName, items, opts = {}) {
-  const jobs = items.map(data => ({ name: queueName, data, ...DEFAULT_OPTS, ...opts }));
-  return getQueue().insert(jobs);
+  // Use individual send() calls — pg-boss v12 insert() format changed and is fragile
+  return Promise.all(
+    items.map(data => getQueue().send(queueName, data, { ...DEFAULT_OPTS, ...opts }))
+  );
 }
 
 export async function registerWorker(queueName, concurrency, handler) {
