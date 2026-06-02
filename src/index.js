@@ -28,6 +28,7 @@ import searchRoutes from './routes/search.js';
 import reportsRoutes from './routes/reports.js';
 import tenantRoutes from './routes/tenants.js';
 import openwaRoutes from './routes/openwa.js';
+import metaWaRoutes from './routes/metaWa.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
@@ -165,6 +166,8 @@ app.use('/search', searchRoutes);
 app.use('/reports', reportsRoutes);
 app.use('/tenants', tenantRoutes);
 app.use('/openwa', openwaRoutes);
+app.use('/meta-wa', metaWaRoutes);
+app.use('/webhooks/meta-wa', metaWaRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
