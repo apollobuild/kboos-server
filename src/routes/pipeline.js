@@ -458,11 +458,11 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
       });
     }
 
-    // Update pipeline with eligibility counts and stage
+    // Update pipeline with eligibility counts and advance to deliverability check
     await prisma.campaignPipeline.update({
       where: { campaignId },
       data: {
-        stage: 'channels_configured',
+        stage: 'deliverability_check',
         eligibleEmail: emailEligible,
         eligibleWa: waEligible,
         eligibleVoice: voiceEligible,
@@ -472,7 +472,7 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
 
     res.json({
       ok: true,
-      stage: 'channels_configured',
+      stage: 'deliverability_check',
       eligibility: {
         email: { eligible: emailEligible, ineligible: emailIneligible },
         wa: { eligible: waEligible, ineligible: waIneligible },
@@ -524,30 +524,30 @@ router.post('/:campaignId/run-deliverability', requireAuth, async (req, res, nex
     // Check Claude key
     try {
       const k = await getApiKey('claude');
-      checks.push({ name: 'Claude AI', status: k ? 'ok' : 'fail', detail: k ? 'Connected' : 'API key missing' });
+      checks.push({ label: 'Claude AI', pass: !!k, detail: k ? 'Connected' : 'API key missing' });
       if (!k) score -= 30;
-    } catch { score -= 30; checks.push({ name: 'Claude AI', status: 'fail', detail: 'Error checking key' }); }
+    } catch { score -= 30; checks.push({ label: 'Claude AI', pass: false, detail: 'Error checking key' }); }
 
     // Check SendGrid
     try {
       const k = await getApiKey('sendgrid');
-      checks.push({ name: 'SendGrid Email', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — email channel disabled' });
+      checks.push({ label: 'SendGrid Email', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — email channel disabled' });
       if (!k) score -= 20;
-    } catch { score -= 20; checks.push({ name: 'SendGrid Email', status: 'warn', detail: 'Error checking key' }); }
+    } catch { score -= 20; checks.push({ label: 'SendGrid Email', pass: null, detail: 'Error checking key' }); }
 
     // Check WATI
     try {
       const k = await getApiKey('wati');
-      checks.push({ name: 'WATI WhatsApp', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — WhatsApp channel disabled' });
+      checks.push({ label: 'WATI WhatsApp', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — WhatsApp channel disabled' });
       if (!k) score -= 20;
-    } catch { score -= 20; checks.push({ name: 'WATI WhatsApp', status: 'warn', detail: 'Error checking key' }); }
+    } catch { score -= 20; checks.push({ label: 'WATI WhatsApp', pass: null, detail: 'Error checking key' }); }
 
     // Check Vapi
     try {
       const k = await getApiKey('vapi');
-      checks.push({ name: 'Vapi Voice', status: k ? 'ok' : 'warn', detail: k ? 'Connected' : 'API key missing — voice channel disabled' });
+      checks.push({ label: 'Vapi Voice', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — voice channel disabled' });
       if (!k) score -= 10;
-    } catch { score -= 10; checks.push({ name: 'Vapi Voice', status: 'warn', detail: 'Error checking key' }); }
+    } catch { score -= 10; checks.push({ label: 'Vapi Voice', pass: null, detail: 'Error checking key' }); }
 
     // Check eligible leads exist
     const eligibleCount = await prisma.lead.count({
@@ -558,8 +558,8 @@ router.post('/:campaignId/run-deliverability', requireAuth, async (req, res, nex
       },
     });
     checks.push({
-      name: 'Eligible Leads',
-      status: eligibleCount > 0 ? 'ok' : 'fail',
+      label: 'Eligible Leads',
+      pass: eligibleCount > 0,
       detail: `${eligibleCount} leads ready for outreach`,
     });
     if (eligibleCount === 0) score -= 30;
