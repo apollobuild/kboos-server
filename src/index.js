@@ -149,7 +149,7 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: t
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString() }));
+app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString(), version: process.env.npm_package_version || '1.0.0' }));
 
 app.use('/auth/login', authLimiter);
 app.use(apiLimiter);
