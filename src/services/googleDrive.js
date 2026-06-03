@@ -1,8 +1,5 @@
 import { google } from 'googleapis';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
+import prisma from '../db.js';
 async function getAuth() {
   const s = await prisma.appSettings.findUnique({ where: { id: 'global' } });
   const key = s?.driveServiceAccountKey;

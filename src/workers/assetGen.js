@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { generateCampaignAssets } from '../services/claude.js';
 import { logClaude } from '../services/costLogger.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleAssetGen(job) {
   const { campaignId } = job.data;

@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { enqueue } from '../services/queue.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /meetings?bizId=X&campaignId=Y
 router.get('/', requireAuth, async (req, res, next) => {
   try {

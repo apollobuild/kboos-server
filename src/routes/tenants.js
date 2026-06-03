@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { requireSuperAdmin } from '../middleware/auth.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // List all tenants
 router.get('/', requireSuperAdmin, async (req, res, next) => {
   try {

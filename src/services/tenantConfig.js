@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
 const _cache = new Map();
+import prisma from '../db.js';
 
 const MARKET_NAMES = {
   MY: 'Malaysia', SG: 'Singapore', ID: 'Indonesia', PH: 'Philippines',

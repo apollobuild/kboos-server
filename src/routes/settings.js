@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
@@ -9,10 +8,9 @@ import { testConnection as testSendGrid, sendEmail } from '../services/sendgrid.
 import { testConnection as testWati } from '../services/wati.js';
 import { testConnection as testOutscraper } from '../services/outscraper.js';
 import { testConnection as testVapi } from '../services/vapi.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }) || {};

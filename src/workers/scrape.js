@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { searchGoogleMaps, mapPlaceToLead } from '../services/outscraper.js';
 import { getApiKey } from '../services/apiKeys.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 function norm(s) {
   return (s || '').toLowerCase()

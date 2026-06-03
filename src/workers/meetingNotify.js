@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
 import { sendMessage as sendWa } from '../services/wati.js';
 import { sendEmail } from '../services/sendgrid.js';
 import { getTenantConfig } from '../services/tenantConfig.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 const REMINDER_LABELS = {
   booking_confirmation: 'confirmed',

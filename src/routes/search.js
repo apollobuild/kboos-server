@@ -1,10 +1,8 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /search?q=xxx — search across leads, businesses, campaigns, replies
 router.get('/', requireAuth, async (req, res, next) => {
   try {

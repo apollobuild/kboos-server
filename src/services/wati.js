@@ -1,8 +1,5 @@
 import { getApiKey } from './apiKeys.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
+import prisma from '../db.js';
 async function getConfig() {
   const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
   const token = await getApiKey('wati');

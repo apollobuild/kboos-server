@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { encrypt, decrypt } from './crypto.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function getApiKey(name) {
   const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });

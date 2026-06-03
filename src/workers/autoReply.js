@@ -1,10 +1,8 @@
-import { PrismaClient } from '@prisma/client';
 import { processAutoReply } from '../services/autoReply.js';
 import { sendMessage } from '../services/wati.js';
 import { sendEmail } from '../services/sendgrid.js';
 import { sendViaSMTP } from '../services/smtp.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 function isWithinSendWindow() {
   const klOffset = 8 * 60;

@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { enqueue } from '../services/queue.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 function deriveStatus(type) {
   if (type === 'wa') return 'contacted';

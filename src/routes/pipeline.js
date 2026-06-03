@@ -1,13 +1,11 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { enqueue, enqueueBatch } from '../services/queue.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { generateCampaignAssets } from '../services/claude.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /pipeline/:campaignId — full pipeline status
 router.get('/:campaignId', requireAuth, async (req, res, next) => {
   try {

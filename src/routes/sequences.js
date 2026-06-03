@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { generateSequence, regenerateTouchpoint } from '../services/claude.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /sequences/summary — counts by status for Dashboard
 router.get('/summary', requireAuth, async (req, res, next) => {
   try {

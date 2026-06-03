@@ -1,10 +1,8 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /portal/data — returns all data for a client's business
 // Clients use their own bizId from JWT; admins can pass ?bizId= to preview
 router.get('/data', requireAuth, async (req, res, next) => {

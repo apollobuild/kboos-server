@@ -2,11 +2,8 @@ import { Router } from 'express';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getApiKey, saveApiKey } from '../services/apiKeys.js';
 import { sendMessageToSession, testConnection, getQR, startNamedSession, stopNamedSession, disconnectNamedSession, getNamedSessionStatus, getWarmupLimit } from '../services/openwa.js';
-import { PrismaClient } from '@prisma/client';
-
+import prisma from '../db.js';
 const router = Router();
-const prisma = new PrismaClient();
-
 // ── Server config ────────────────────────────────────────────────────────────
 
 router.get('/config', requireAuth, async (req, res, next) => {

@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { sendTemplateMessage, sendTextMessage, getTemplates, testConnection, buildComponents } from '../services/metaWa.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /meta-wa/templates — list approved Meta templates
 router.get('/templates', requireAuth, async (req, res, next) => {
   try {

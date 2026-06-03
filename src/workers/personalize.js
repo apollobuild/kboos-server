@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { batchPersonalizeLeads } from '../services/claude.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handlePersonalize(job) {
   const { campaignId, leadIds } = job.data;

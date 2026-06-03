@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
 import { sendEmail } from '../services/sendgrid.js';
 import { sendViaSMTP } from '../services/smtp.js';
 import { injectPersonalization } from '../services/leadScoring.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleOutreachEmail(job) {
   const { leadId, campaignId, assetType, stepDay, actionId } = job.data;

@@ -1,14 +1,13 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import Anthropic from '@anthropic-ai/sdk';
 import multer from 'multer';
 import { sendMessage } from '../services/wati.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { logClaude } from '../services/costLogger.js';
 import { enqueue } from '../services/queue.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 const upload = multer();
 
 function verifySecret(req) {

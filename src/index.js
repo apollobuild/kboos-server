@@ -34,10 +34,7 @@ import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
 import { startQueue, enqueue } from './services/queue.js';
 import { startWorkers } from './workers/index.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
+import prisma from './db.js';
 async function scanMeetingReminders() {
   try {
     const now = new Date();

@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getApiKey } from '../services/apiKeys.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // In-memory FX cache — survives per-process lifetime, DB persists across restarts
 let _fxCache = { rate: null, fetchedAt: null };
 const FX_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours

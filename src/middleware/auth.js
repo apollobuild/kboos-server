@@ -1,8 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
+import prisma from '../db.js';
 // Throttle: only write to DB once per 30s per user to avoid hammering on every request
 const lastActiveThrottle = new Map();
 

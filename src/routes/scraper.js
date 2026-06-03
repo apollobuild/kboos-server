@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { searchGoogleMaps, mapPlaceToLead } from '../services/outscraper.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // POST /scraper/google-maps
 // Body: { campaignId, keyword, city, radius, limit }
 // Blocks until scrape completes and leads are saved. Returns { count, leads }.

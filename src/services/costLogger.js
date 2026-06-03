@@ -1,8 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
 // Anthropic pricing USD per token (as of 2025)
+import prisma from '../db.js';
 const CLAUDE_RATES = {
   'claude-sonnet-4-6':        { input: 3.00  / 1_000_000, output: 15.00 / 1_000_000 },
   'claude-haiku-4-5-20251001': { input: 0.80  / 1_000_000, output:  4.00 / 1_000_000 },

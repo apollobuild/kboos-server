@@ -1,14 +1,12 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { suggestReply } from '../services/claude.js';
 import { sendMessage } from '../services/wati.js';
 import { sendEmail } from '../services/sendgrid.js';
 import { sendMessageToSession } from '../services/openwa.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const tid = req.user.tenantId;

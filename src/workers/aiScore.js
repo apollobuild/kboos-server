@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { scoreLeadsWithAI } from '../services/claude.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleAiScore(job) {
   const { campaignId, leadIds } = job.data;

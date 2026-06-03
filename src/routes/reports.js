@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { enqueue } from '../services/queue.js';
 import { buildReportData, buildHtml } from '../workers/weeklyReport.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // POST /reports/send-now/:bizId — manually trigger report for one business
 router.post('/send-now/:bizId', requireAuth, async (req, res, next) => {
   try {

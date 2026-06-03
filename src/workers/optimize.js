@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { generateOptimizationSuggestions } from '../services/claude.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleOptimize(job) {
   const { campaignId } = job.data;

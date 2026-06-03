@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { scoreLeadQuality } from '../services/leadScoring.js';
 import { enqueue } from '../services/queue.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleValidation(job) {
   const { campaignId } = job.data;

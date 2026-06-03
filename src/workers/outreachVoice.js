@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { makeCall } from '../services/vapi.js';
 import { injectPersonalization } from '../services/leadScoring.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleOutreachVoice(job) {
   const { leadId, campaignId, assetType, stepDay, actionId } = job.data;

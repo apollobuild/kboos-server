@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { enrichLead } from '../services/apollo.js';
 import { syncLeads } from '../services/googleDrive.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // POST /enrichment/start/:campaignId
 router.post('/start/:campaignId', requireAuth, async (req, res, next) => {
   try {

@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { checkChannelEligibility } from '../services/leadScoring.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleEligibility(job) {
   const { campaignId } = job.data;

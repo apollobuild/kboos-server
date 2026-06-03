@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { sendEmail } from '../services/sendgrid.js';
 import { getTenantConfig, formatCurrencyServer } from '../services/tenantConfig.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 const COLOR_MAP = {
   blue: '#3b82f6', green: '#22c55e', amber: '#f59e0b', red: '#ef4444',

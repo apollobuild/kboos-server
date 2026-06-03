@@ -3,10 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { generateBrief, generateEmail, generateFromOffer, suggestReply, testConnection, generateCampaignFromGoal, analyzeCampaignPerformance, prioritizeLeads, generateSmartFollowup, generateOutreachAssets, generateWASequence } from '../services/claude.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { getCache, setCache, hashInput } from '../services/aiCache.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
-
+import prisma from '../db.js';
 const router = Router();
 
 router.post('/generate-brief', requireAuth, async (req, res, next) => {

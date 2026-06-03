@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { enrichLead } from '../services/apollo.js';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export async function handleEnrichment(job) {
   const { leadId, campaignId } = job.data;

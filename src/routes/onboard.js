@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import crypto from 'crypto';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // Internal: generate a one-time onboard link for a business
 router.post('/generate-token', requireAuth, async (req, res, next) => {
   try {

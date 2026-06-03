@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { makeCall, getCallStatus } from '../services/vapi.js';
 import { getApiKey } from '../services/apiKeys.js';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // GET /voice/phone-numbers — list phone numbers from Vapi
 router.get('/phone-numbers', requireAuth, async (req, res, next) => {
   try {

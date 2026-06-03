@@ -1,16 +1,14 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
 import { makeCall } from '../services/vapi.js';
 import { sendEmail } from '../services/sendgrid.js';
 import { sendMessage } from '../services/wati.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { logClaude } from '../services/costLogger.js';
 import Anthropic from '@anthropic-ai/sdk';
+import prisma from '../db.js';
 
 const router = Router();
-const prisma = new PrismaClient();
-
 // In-memory rate limit: phone → { usedAt, preview }
 const prospectCache = new Map();
 const RATE_MS = 24 * 60 * 60 * 1000;

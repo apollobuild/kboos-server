@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
-
-const prisma = new PrismaClient();
+import prisma from '../db.js';
 
 export function hashInput(data) {
   return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 16);
