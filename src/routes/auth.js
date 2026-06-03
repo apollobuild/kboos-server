@@ -118,7 +118,7 @@ router.post('/forgot-password', async (req, res, next) => {
         data: { inviteToken: resetToken },
       });
 
-      const frontendUrl = process.env.FRONTEND_URL || 'https://kboos.digital';
+      const frontendUrl = process.env.FRONTEND_URL || '';
       const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
       // Best-effort email send — non-fatal if SendGrid not configured
@@ -182,7 +182,7 @@ router.post('/invite', requireAuth, async (req, res, next) => {
       },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || 'https://kboos.digital';
+    const frontendUrl = process.env.FRONTEND_URL || '';
     const inviteUrl = `${frontendUrl}/set-password?token=${inviteToken}`;
 
     try {
