@@ -8,8 +8,9 @@ const router = Router();
 // POST /enrichment/start/:campaignId
 router.post('/start/:campaignId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const campaignId = parseInt(req.params.campaignId);
-    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'enriching' } });
@@ -17,7 +18,7 @@ router.post('/start/:campaignId', requireAuth, async (req, res, next) => {
 
     // Run async without blocking response
     setImmediate(async () => {
-      const leads = await prisma.lead.findMany({ where: { campaignId, enriched: false } });
+      const leads = await prisma.lead.findMany({ where: { campaignId, tenantId: tid, enriched: false } });
       const city = campaign.config?.google_maps?.city || '';
 
       for (const lead of leads) {
@@ -48,12 +49,12 @@ router.post('/start/:campaignId', requireAuth, async (req, res, next) => {
       await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'awaiting_launch' } });
 
       if (campaign.driveSheetId) {
-        const allLeads = await prisma.lead.findMany({ where: { campaignId } });
+        const allLeads = await prisma.lead.findMany({ where: { campaignId, tenantId: tid } });
         await syncLeads({ spreadsheetId: campaign.driveSheetId, leads: allLeads }).catch(() => {});
       }
 
       await prisma.activity.create({
-        data: { color: 'blue', msg: `Enrichment complete for "${campaign.name}"`, tag: 'Enrichment' },
+        data: { color: 'blue', msg: `Enrichment complete for "${campaign.name}"`, tag: 'Enrichment', tenantId: tid },
       }).catch(() => {});
     });
   } catch (e) { next(e); }
@@ -62,13 +63,14 @@ router.post('/start/:campaignId', requireAuth, async (req, res, next) => {
 // GET /enrichment/status/:campaignId
 router.get('/status/:campaignId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const campaignId = parseInt(req.params.campaignId);
     const [total, success, noData, errors, campaign] = await Promise.all([
-      prisma.lead.count({ where: { campaignId } }),
-      prisma.lead.count({ where: { campaignId, enrichmentNote: 'success' } }),
-      prisma.lead.count({ where: { campaignId, enrichmentNote: 'no_data' } }),
-      prisma.lead.count({ where: { campaignId, enrichmentNote: 'error' } }),
-      prisma.campaign.findUnique({ where: { id: campaignId }, select: { status: true } }),
+      prisma.lead.count({ where: { campaignId, tenantId: tid } }),
+      prisma.lead.count({ where: { campaignId, tenantId: tid, enrichmentNote: 'success' } }),
+      prisma.lead.count({ where: { campaignId, tenantId: tid, enrichmentNote: 'no_data' } }),
+      prisma.lead.count({ where: { campaignId, tenantId: tid, enrichmentNote: 'error' } }),
+      prisma.campaign.findFirst({ where: { id: campaignId, tenantId: tid }, select: { status: true } }),
     ]);
     const done = success + noData + errors;
     res.json({ total, enriched: success, noData, errors, done, complete: campaign?.status !== 'enriching', campaignStatus: campaign?.status });
@@ -78,8 +80,9 @@ router.get('/status/:campaignId', requireAuth, async (req, res, next) => {
 // GET /enrichment/credit-estimate/:campaignId
 router.get('/credit-estimate/:campaignId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const campaignId = parseInt(req.params.campaignId);
-    const total = await prisma.lead.count({ where: { campaignId, enriched: false } });
+    const total = await prisma.lead.count({ where: { campaignId, tenantId: tid, enriched: false } });
     res.json({ creditsNeeded: total, note: 'Apollo Professional: people search unlimited. Mobile lookups cost extra.' });
   } catch (e) { next(e); }
 });

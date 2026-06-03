@@ -7,10 +7,11 @@ const router = Router();
 // GET /sequences/summary — counts by status for Dashboard
 router.get('/summary', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const [active, review, draft] = await Promise.all([
-      prisma.businessSequence.count({ where: { status: 'active' } }),
-      prisma.businessSequence.count({ where: { status: 'review' } }),
-      prisma.businessSequence.count({ where: { status: 'draft' } }),
+      prisma.businessSequence.count({ where: { status: 'active', tenantId: tid } }),
+      prisma.businessSequence.count({ where: { status: 'review', tenantId: tid } }),
+      prisma.businessSequence.count({ where: { status: 'draft', tenantId: tid } }),
     ]);
     res.json({ active, review, draft, total: active + review + draft });
   } catch (e) { next(e); }
@@ -19,7 +20,8 @@ router.get('/summary', requireAuth, async (req, res, next) => {
 // GET /sequences/:bizId — get sequence (or empty scaffold)
 router.get('/:bizId', requireAuth, async (req, res, next) => {
   try {
-    const biz = await prisma.business.findUnique({ where: { id: req.params.bizId } });
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
     if (!biz) return res.status(404).json({ error: 'Business not found' });
 
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: req.params.bizId } });
@@ -30,7 +32,8 @@ router.get('/:bizId', requireAuth, async (req, res, next) => {
 // POST /sequences/:bizId/generate — generate full sequence with Claude Sonnet
 router.post('/:bizId/generate', requireAuth, async (req, res, next) => {
   try {
-    const biz = await prisma.business.findUnique({ where: { id: req.params.bizId } });
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
     if (!biz) return res.status(404).json({ error: 'Business not found' });
 
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: req.params.bizId } });
@@ -66,18 +69,20 @@ router.post('/:bizId/generate', requireAuth, async (req, res, next) => {
 // POST /sequences/:bizId/regenerate/:touchpointId — regenerate one touchpoint with Claude Haiku
 router.post('/:bizId/regenerate/:touchpointId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: req.params.bizId } });
     if (!seq) return res.status(404).json({ error: 'Sequence not found' });
 
     const touchpoints = Array.isArray(seq.touchpoints) ? seq.touchpoints : [];
     const idx = touchpoints.findIndex(t => String(t.id) === req.params.touchpointId);
     if (idx === -1) return res.status(404).json({ error: 'Touchpoint not found' });
-
-    const biz = await prisma.business.findUnique({ where: { id: req.params.bizId } });
     const updated = await regenerateTouchpoint({
       brief: seq.brief,
       persona: seq.persona,
-      bizName: biz?.name || '',
+      bizName: biz.name,
       touchpoint: touchpoints[idx],
     });
 
@@ -95,6 +100,10 @@ router.post('/:bizId/regenerate/:touchpointId', requireAuth, async (req, res, ne
 // PATCH /sequences/:bizId/touchpoint/:id — manual edit a touchpoint
 router.patch('/:bizId/touchpoint/:touchpointId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const seq = await prisma.businessSequence.findUnique({ where: { bizId: req.params.bizId } });
     if (!seq) return res.status(404).json({ error: 'Sequence not found' });
 
@@ -116,6 +125,10 @@ router.patch('/:bizId/touchpoint/:touchpointId', requireAuth, async (req, res, n
 // PATCH /sequences/:bizId/brief — update brief and/or persona
 router.patch('/:bizId/brief', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const { brief, persona } = req.body;
     const data = { updatedAt: new Date() };
     if (brief !== undefined) data.brief = brief;
@@ -134,6 +147,10 @@ router.patch('/:bizId/brief', requireAuth, async (req, res, next) => {
 // POST /sequences/:bizId/approve — set status to active
 router.post('/:bizId/approve', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const saved = await prisma.businessSequence.update({
       where: { bizId: req.params.bizId },
       data: { status: 'active', updatedAt: new Date() },
@@ -145,6 +162,10 @@ router.post('/:bizId/approve', requireAuth, async (req, res, next) => {
 // POST /sequences/:bizId/reset — reset to draft
 router.post('/:bizId/reset', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const saved = await prisma.businessSequence.update({
       where: { bizId: req.params.bizId },
       data: { status: 'draft', touchpoints: [], objections: [], updatedAt: new Date() },
@@ -156,6 +177,10 @@ router.post('/:bizId/reset', requireAuth, async (req, res, next) => {
 // PATCH /sequences/:bizId/objections — save objection library
 router.patch('/:bizId/objections', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     const { objections } = req.body;
     const saved = await prisma.businessSequence.upsert({
       where: { bizId: req.params.bizId },
@@ -169,6 +194,10 @@ router.patch('/:bizId/objections', requireAuth, async (req, res, next) => {
 // DELETE /sequences/:bizId — permanently delete sequence
 router.delete('/:bizId', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
+    const biz = await prisma.business.findFirst({ where: { id: req.params.bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+
     await prisma.businessSequence.delete({ where: { bizId: req.params.bizId } });
     res.json({ ok: true });
   } catch (e) {

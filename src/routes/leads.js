@@ -29,7 +29,13 @@ router.get('/', requireAuth, async (req, res, next) => {
     const where = req.query.campaignId
       ? { campaignId: parseInt(req.query.campaignId), tenantId: tid }
       : { tenantId: tid };
-    res.json(await prisma.lead.findMany({ where, orderBy: { createdAt: 'desc' } }));
+    const limit = Math.min(parseInt(req.query.limit) || 500, 2000);
+    const offset = parseInt(req.query.offset) || 0;
+    const [leads, total] = await Promise.all([
+      prisma.lead.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }),
+      prisma.lead.count({ where }),
+    ]);
+    res.json({ leads, total, limit, offset });
   } catch (e) { next(e); }
 });
 

@@ -148,7 +148,8 @@ router.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  const secret = process.env.META_WA_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET || 'kboos-webhook';
+  const secret = process.env.META_WA_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
+  if (!secret) return res.sendStatus(403);
   if (mode === 'subscribe' && token === secret) {
     res.status(200).send(challenge);
   } else {

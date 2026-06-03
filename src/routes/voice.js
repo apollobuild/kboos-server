@@ -30,15 +30,16 @@ router.get('/phone-numbers', requireAuth, async (req, res, next) => {
 // POST /voice/call — trigger Vapi call for a lead
 router.post('/call', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { leadId, campaignScript } = req.body;
     if (!leadId) return res.status(400).json({ error: 'leadId required' });
 
-    const lead = await prisma.lead.findUnique({ where: { id: parseInt(leadId) } });
+    const lead = await prisma.lead.findFirst({ where: { id: parseInt(leadId), tenantId: tid } });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     if (!lead.phone) return res.status(400).json({ error: 'Lead has no phone number' });
 
     const campaign = lead.campaignId
-      ? await prisma.campaign.findUnique({ where: { id: lead.campaignId } })
+      ? await prisma.campaign.findFirst({ where: { id: lead.campaignId, tenantId: tid } })
       : null;
 
     const call = await makeCall({
@@ -48,7 +49,6 @@ router.post('/call', requireAuth, async (req, res, next) => {
       campaignScript,
     });
 
-    // Update lead status
     await prisma.lead.update({
       where: { id: lead.id },
       data: { status: 'call_initiated', last: 'just now' },
@@ -59,6 +59,7 @@ router.post('/call', requireAuth, async (req, res, next) => {
         color: 'purple',
         msg: `AI voice call placed to ${lead.name} (${lead.company})`,
         tag: 'Voice',
+        tenantId: tid,
       },
     }).catch(() => {});
 

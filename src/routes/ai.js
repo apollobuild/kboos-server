@@ -38,11 +38,13 @@ router.get('/test', requireAuth, async (req, res, next) => {
 
 router.post('/generate-campaign', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { bizId, goal } = req.body;
-    const biz = await prisma.business.findUnique({ where: { id: bizId } });
+    const biz = await prisma.business.findFirst({ where: { id: bizId, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
     const seq = await prisma.businessSequence.findUnique({ where: { bizId } });
     const brief = seq?.brief || {};
-    const result = await generateCampaignFromGoal({ bizId, goal, brief, industry: biz?.industry || '', tenantId: req.user?.tenantId });
+    const result = await generateCampaignFromGoal({ bizId, goal, brief, industry: biz?.industry || '', tenantId: tid });
     res.json(result);
   } catch (e) { next(e); }
 });
@@ -50,7 +52,8 @@ router.post('/generate-campaign', requireAuth, async (req, res, next) => {
 router.get('/campaign-performance/:id', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.id);
-    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    const tid = req.user.tenantId;
+    const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     const now = new Date();
@@ -79,11 +82,12 @@ router.get('/campaign-performance/:id', requireAuth, async (req, res, next) => {
 
 router.post('/prioritize-leads', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { campaignId, leadIds } = req.body;
-    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+    const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId: tid } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    const where = { campaignId, status: { notIn: ['unsubscribed', 'bounced'] } };
+    const where = { campaignId, tenantId: tid, status: { notIn: ['unsubscribed', 'bounced'] } };
     if (leadIds?.length) where.id = { in: leadIds };
     const leads = await prisma.lead.findMany({ where, take: 200 });
 
@@ -115,8 +119,9 @@ router.post('/generate-assets', requireAuth, async (req, res, next) => {
 
 router.post('/smart-followup', requireAuth, async (req, res, next) => {
   try {
+    const tid = req.user.tenantId;
     const { leadId, channel } = req.body;
-    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+    const lead = await prisma.lead.findFirst({ where: { id: leadId, tenantId: tid } });
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     const campaign = lead.campaignId

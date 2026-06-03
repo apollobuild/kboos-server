@@ -132,16 +132,16 @@ router.post('/webhook', async (req, res, next) => {
     const apiKey = await getApiKey('billplz_api_key');
     const xSigKey = await getApiKey('billplz_x_signature_key');
 
-    if (xSigKey && xSig) {
+    // Verify signature when key is configured; reject if key exists but sig missing/wrong
+    if (xSigKey) {
+      if (!xSig) return res.status(400).json({ error: 'Missing webhook signature' });
       const sigFields = Object.keys(data)
         .filter(k => k !== 'billplz[x_signature]')
         .sort()
         .map(k => `${k}${data[k]}`)
         .join('|');
       const expected = crypto.createHmac('sha256', xSigKey).update(sigFields).digest('hex');
-      if (expected !== xSig) {
-        return res.status(400).json({ error: 'Invalid signature' });
-      }
+      if (expected !== xSig) return res.status(400).json({ error: 'Invalid signature' });
     }
 
     if (!paid) return res.json({ ok: true });

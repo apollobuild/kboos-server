@@ -102,6 +102,7 @@ model Campaign {
   channelStrategy    String?
 
   @@index([tenantId])
+  @@index([bizId])
 }
 
 model MetaWANumber {
@@ -170,6 +171,9 @@ model Lead {
   reviewCount        Int?
 
   @@index([tenantId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([campaignId, status])
 }
 
 model Reply {
@@ -243,6 +247,7 @@ model ApiUsageLog {
 
 model CampaignAction {
   id         Int      @id @default(autoincrement())
+  tenantId   String   @default("default")
   leadId     Int
   campaignId Int
   type       String
@@ -257,6 +262,7 @@ model CampaignAction {
 
   @@index([campaignId, stepDay, type])
   @@index([leadId])
+  @@index([tenantId])
 }
 
 model Wallet {
@@ -277,6 +283,8 @@ model WalletTransaction {
   note        String   @default("")
   status      String   @default("pending")
   createdAt   DateTime @default(now())
+
+  @@index([tenantId])
 }
 
 model BusinessSequence {

@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { sendMessageToSession, getWarmupLimit } from './services/openwa.js';
 
 import authRoutes from './routes/auth.js';
@@ -131,12 +132,25 @@ async function runWASequenceStep() {
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors({ origin: '*', credentials: true }));
+const allowedOrigins = (process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.length ? (origin, cb) => {
+    if (!origin || allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  } : '*',
+  credentials: true,
+}));
+
+// Rate limiting — protect auth and public endpoints from abuse
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts, try again in 15 minutes' } });
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/health' });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+app.use('/auth/login', authLimiter);
+app.use(apiLimiter);
 app.use('/auth', authRoutes);
 app.use('/businesses', businessRoutes);
 app.use('/campaigns', campaignRoutes);
