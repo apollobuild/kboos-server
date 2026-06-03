@@ -100,6 +100,21 @@ model Campaign {
   personalizationLevel Int   @default(2)
   leadSource         String  @default("gmaps")
   channelStrategy    String?
+  waNumberId         Int?
+
+  @@index([tenantId])
+}
+
+model MetaWANumber {
+  id            Int      @id @default(autoincrement())
+  tenantId      String   @default("default")
+  label         String
+  phoneNumberId String
+  active        Boolean  @default(true)
+  dailyLimit    Int      @default(1000)
+  sentToday     Int      @default(0)
+  lastResetAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   @@index([tenantId])
 }

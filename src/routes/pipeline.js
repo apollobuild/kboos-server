@@ -407,7 +407,7 @@ router.post('/:campaignId/personalize', requireAuth, async (req, res, next) => {
 router.post('/:campaignId/configure-channels', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
-    const { channels = [], strategy = 'balanced' } = req.body;
+    const { channels = [], strategy = 'balanced', waNumberId } = req.body;
 
     if (!channels.length) return res.status(400).json({ error: 'channels array is required' });
 
@@ -422,7 +422,7 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
     });
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: { channels, channelStrategy: strategy },
+      data: { channels, channelStrategy: strategy, ...(waNumberId ? { waNumberId: parseInt(waNumberId) } : {}) },
     });
 
     // Run eligibility filter inline for all leads

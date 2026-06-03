@@ -1,9 +1,75 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { sendTemplateMessage, sendTextMessage, getTemplates, testConnection, buildComponents } from '../services/metaWa.js';
+import { getApiKey } from '../services/apiKeys.js';
 import prisma from '../db.js';
 
 const router = Router();
+// ── Phone Number CRUD ──
+
+// GET /meta-wa/numbers
+router.get('/numbers', requireAuth, async (req, res, next) => {
+  try {
+    const tid = req.user.tenantId || 'default';
+    const numbers = await prisma.metaWANumber.findMany({
+      where: { tenantId: tid },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(numbers);
+  } catch (e) { next(e); }
+});
+
+// POST /meta-wa/numbers — add a new number
+router.post('/numbers', requireAuth, async (req, res, next) => {
+  try {
+    const tid = req.user.tenantId || 'default';
+    const { label, phoneNumberId, dailyLimit = 1000 } = req.body;
+    if (!label?.trim()) return res.status(400).json({ error: 'Label is required' });
+    if (!phoneNumberId?.trim()) return res.status(400).json({ error: 'Phone Number ID is required' });
+    const num = await prisma.metaWANumber.create({
+      data: { tenantId: tid, label: label.trim(), phoneNumberId: phoneNumberId.trim(), dailyLimit: parseInt(dailyLimit) || 1000 },
+    });
+    res.json(num);
+  } catch (e) { next(e); }
+});
+
+// PATCH /meta-wa/numbers/:id
+router.patch('/numbers/:id', requireAuth, async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { label, phoneNumberId, dailyLimit, active } = req.body;
+    const data = {};
+    if (label !== undefined) data.label = label.trim();
+    if (phoneNumberId !== undefined) data.phoneNumberId = phoneNumberId.trim();
+    if (dailyLimit !== undefined) data.dailyLimit = parseInt(dailyLimit);
+    if (active !== undefined) data.active = active;
+    const num = await prisma.metaWANumber.update({ where: { id }, data });
+    res.json(num);
+  } catch (e) { next(e); }
+});
+
+// DELETE /meta-wa/numbers/:id
+router.delete('/numbers/:id', requireAuth, async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    await prisma.metaWANumber.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// POST /meta-wa/numbers/:id/test — test a specific number
+router.post('/numbers/:id/test', requireAuth, async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    const num = await prisma.metaWANumber.findUnique({ where: { id } });
+    if (!num) return res.status(404).json({ error: 'Number not found' });
+    const result = await testConnection(num.phoneNumberId);
+    res.json(result);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // GET /meta-wa/templates — list approved Meta templates
 router.get('/templates', requireAuth, async (req, res, next) => {
   try {
