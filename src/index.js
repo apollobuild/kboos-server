@@ -181,6 +181,19 @@ app.use('/meta-wa', metaWaRoutes);
 app.use('/webhooks/meta-wa', metaWaRoutes);
 
 app.use((err, req, res, next) => {
+  // Translate Prisma errors to user-friendly messages — never expose raw Prisma output
+  if (err.code === 'P2002') {
+    return res.status(409).json({ error: 'A record with that value already exists' });
+  }
+  if (err.code === 'P2003') {
+    return res.status(409).json({ error: 'Cannot complete this action because related records exist' });
+  }
+  if (err.code === 'P2025') {
+    return res.status(404).json({ error: 'Record not found' });
+  }
+  if (err.code === 'P2016' || err.code === 'P2019') {
+    return res.status(400).json({ error: 'Invalid data provided' });
+  }
   console.error(err);
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });

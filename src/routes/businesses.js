@@ -37,7 +37,16 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const tid = req.user.tenantId;
-    await prisma.business.delete({ where: { id: req.params.id, tenantId: tid } });
+    const id = req.params.id;
+    const biz = await prisma.business.findFirst({ where: { id, tenantId: tid } });
+    if (!biz) return res.status(404).json({ error: 'Business not found' });
+    const campaignCount = await prisma.campaign.count({ where: { bizId: id } });
+    if (campaignCount > 0) {
+      return res.status(409).json({
+        error: `Cannot delete business with ${campaignCount} campaign${campaignCount > 1 ? 's' : ''}. Delete all campaigns first.`,
+      });
+    }
+    await prisma.business.delete({ where: { id } });
     res.json({ ok: true });
   } catch (e) { next(e); }
 });

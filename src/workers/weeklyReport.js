@@ -19,13 +19,9 @@ export async function buildReportData(bizId) {
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
 
-  const [biz, campaigns, actions, replies, meetings, leads] = await Promise.all([
+  const [biz, campaigns, replies, meetings, leads] = await Promise.all([
     prisma.business.findUnique({ where: { id: bizId } }),
-    prisma.campaign.findMany({ where: { bizId } }),
-    prisma.campaignAction.findMany({
-      where: { campaign: { bizId }, sentAt: { gte: weekStart }, status: 'sent' },
-      select: { type: true },
-    }),
+    prisma.campaign.findMany({ where: { bizId }, select: { id: true, status: true } }),
     prisma.reply.findMany({
       where: { bizId, createdAt: { gte: weekStart } },
       select: { id: true },
@@ -39,6 +35,14 @@ export async function buildReportData(bizId) {
       select: { id: true, status: true, score: true, dealValue: true },
     }),
   ]);
+
+  const campaignIds = campaigns.map(c => c.id);
+  const actions = campaignIds.length > 0
+    ? await prisma.campaignAction.findMany({
+        where: { campaignId: { in: campaignIds }, sentAt: { gte: weekStart }, status: 'sent' },
+        select: { type: true },
+      })
+    : [];
 
   if (!biz) return null;
 
