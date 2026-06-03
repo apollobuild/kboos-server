@@ -187,7 +187,9 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
     const dateFilter = (field) => start ? { [field]: { gte: start, lt: end } } : {};
 
     const settings = await prisma.appSettings.findUnique({ where: { id: 'global' } });
-    const { rate, updatedAt: rateUpdatedAt } = await getLiveUsdRmRate();
+    // Use the rate the admin saved — only overwritten when they click Refresh
+    const rate = settings?.usdRmRate || 4.70;
+    const rateUpdatedAt = settings?.updatedAt?.toISOString() || null;
 
     // Claude — exact from ApiUsageLog (real token costs)
     const claudeLog = await prisma.apiUsageLog.aggregate({
