@@ -24,9 +24,18 @@ router.get('/', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+const VALID_API_KEYS = new Set([
+  'claude', 'sendgrid', 'sendgrid_from_email', 'wati', 'wati_url',
+  'apollo', 'outscraper', 'billplz_api_key', 'billplz_collection_id',
+  'billplz_x_signature_key', 'vapi', 'vapi_phone_number_id',
+  'meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id',
+  'google_maps', 'openai',
+]);
+
 router.post('/api-key', requireAuth, async (req, res, next) => {
   try {
     const { api, value } = req.body;
+    if (!VALID_API_KEYS.has(api)) return res.status(400).json({ error: `Unknown API key name: ${api}` });
     await saveApiKey(api, value);
     res.json({ ok: true });
   } catch (e) { next(e); }
