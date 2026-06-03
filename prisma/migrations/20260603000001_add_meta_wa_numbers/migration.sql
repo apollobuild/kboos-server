@@ -13,5 +13,4 @@ CREATE TABLE IF NOT EXISTS "MetaWANumber" (
 );
 CREATE INDEX IF NOT EXISTS "MetaWANumber_tenantId_idx" ON "MetaWANumber"("tenantId");
 
--- Add WA number selector to Campaign
-ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "waNumberId" INTEGER;
+-- waNumberId stored in Campaign.config JSON (no DB column needed)

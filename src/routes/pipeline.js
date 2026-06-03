@@ -414,6 +414,9 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
     const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
+    // Store waNumberId in config JSON (no dedicated DB column)
+    const updatedConfig = { ...(campaign.config || {}), waNumberId: waNumberId || null };
+
     // Save channel config to pipeline and campaign
     await prisma.campaignPipeline.upsert({
       where: { campaignId },
@@ -422,7 +425,7 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
     });
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: { channels, channelStrategy: strategy, ...(waNumberId ? { waNumberId: parseInt(waNumberId) } : {}) },
+      data: { channels, channelStrategy: strategy, config: updatedConfig },
     });
 
     // Run eligibility filter inline for all leads

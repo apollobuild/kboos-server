@@ -100,7 +100,6 @@ model Campaign {
   personalizationLevel Int   @default(2)
   leadSource         String  @default("gmaps")
   channelStrategy    String?
-  waNumberId         Int?
 
   @@index([tenantId])
 }
