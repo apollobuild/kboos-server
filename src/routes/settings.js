@@ -110,7 +110,7 @@ router.post('/users/:id/resend-invite', requireAdmin, async (req, res, next) => 
     const inviteToken = randomBytes(32).toString('hex');
     await prisma.user.update({ where: { id: req.params.id }, data: { inviteToken } });
 
-    const frontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = process.env.FRONTEND_URL;
     const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
 
     try {
@@ -316,7 +316,7 @@ router.post('/user', requireAdmin, async (req, res, next) => {
       data: { email, password: placeholder, name, role: role || 'operator', bizId, inviteToken, tenantId: tid },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || '';
+    const frontendUrl = process.env.FRONTEND_URL;
     const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
 
     try {

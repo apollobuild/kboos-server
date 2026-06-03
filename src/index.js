@@ -1,3 +1,4 @@
+import './config/env.js'; // validate required env vars before anything else
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -133,7 +134,7 @@ async function runWASequenceStep() {
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-const allowedOrigins = (process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+const allowedOrigins = process.env.FRONTEND_URL.split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
   origin: allowedOrigins.length ? (origin, cb) => {
     if (!origin || allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true);

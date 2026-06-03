@@ -3,8 +3,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 const ALGO = 'aes-256-cbc';
 
 function getKey() {
-  const k = process.env.ENCRYPTION_KEY || '';
-  if (k.length !== 32) throw new Error('ENCRYPTION_KEY must be exactly 32 characters');
+  const k = process.env.ENCRYPTION_KEY;
+  if (!k || k.length !== 32) throw new Error('ENCRYPTION_KEY must be exactly 32 characters');
   return Buffer.from(k);
 }
 
