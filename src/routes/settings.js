@@ -18,7 +18,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     const s = await prisma.appSettings.findUnique({ where: { id: 'global' } }) || {};
     // Mask key values
     const keys = {};
-    for (const api of ['claude', 'sendgrid', 'wati', 'wati_url', 'apollo', 'outscraper', 'billplz_api_key', 'billplz_collection_id', 'billplz_x_signature_key', 'vapi', 'vapi_phone_number_id']) {
+    for (const api of ['claude', 'sendgrid', 'wati', 'wati_url', 'apollo', 'outscraper', 'billplz_api_key', 'billplz_collection_id', 'billplz_x_signature_key', 'vapi', 'vapi_phone_number_id', 'meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id']) {
       const val = await getApiKey(api);
       keys[api] = val ? '••••••••' + val.slice(-4) : '';
     }
