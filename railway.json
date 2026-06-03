@@ -1,10 +1,8 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "buildCommand": "npm ci && npx prisma generate"
-  },
   "deploy": {
-    "startCommand": "npx prisma db push && node src/index.js",
+    "preDeployCommand": "npx prisma db push && npx prisma generate",
+    "startCommand": "node src/index.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
