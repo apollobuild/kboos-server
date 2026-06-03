@@ -202,8 +202,8 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
     });
 
     const [emailCount, waCount, enrichedCount] = await Promise.all([
-      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', tenantId: tidFilter, ...dateFilter('sentAt') } }),
-      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', tenantId: tidFilter, ...dateFilter('sentAt') } }),
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', ...dateFilter('sentAt') } }),
+      prisma.campaignAction.count({ where: { type: 'wa',    status: 'sent', ...dateFilter('sentAt') } }),
       prisma.lead.count({ where: { enriched: true, tenantId: tidFilter, ...dateFilter('enrichedAt') } }),
     ]);
 

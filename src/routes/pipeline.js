@@ -503,9 +503,12 @@ router.get('/:campaignId/channel-eligibility', requireAuth, async (req, res, nex
     });
 
     res.json({
-      email: { eligible: emailEligible, ineligible: emailIneligible, reasons: [] },
-      wa: { eligible: waEligible, ineligible: waIneligible },
-      voice: { eligible: voiceEligible, ineligible: voiceIneligible },
+      eligibleEmail: emailEligible,
+      ineligibleEmail: emailIneligible,
+      eligibleWa: waEligible,
+      ineligibleWa: waIneligible,
+      eligibleVoice: voiceEligible,
+      ineligibleVoice: voiceIneligible,
       totalEligible,
       totalIneligible,
     });
