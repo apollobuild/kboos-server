@@ -25,6 +25,7 @@ export async function startQueue() {
     connectionString: process.env.DATABASE_URL,
     deleteAfterDays: 7,
     archiveCompletedAfterSeconds: 3600,
+    max: 3,
   });
   boss.on('error', err => console.error('[Queue] pg-boss error:', err.message));
   await boss.start();
