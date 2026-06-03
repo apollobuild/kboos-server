@@ -318,6 +318,34 @@ router.post('/:campaignId/ai-score', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /pipeline/:campaignId/retry-ai-score — retry failed AI scoring jobs
+router.post('/:campaignId/retry-ai-score', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+    const approvedTiers = pipeline?.approvedTiers || ['A', 'B'];
+
+    const leads = await prisma.lead.findMany({
+      where: { campaignId, tier: { in: approvedTiers } },
+      select: { id: true },
+    });
+
+    const BATCH_SIZE = 50;
+    const batches = [];
+    for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+      batches.push(leads.slice(i, i + BATCH_SIZE).map(l => l.id));
+    }
+
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { stage: 'ai_scoring', aiScoreTotal: leads.length, aiScoreComplete: 0, lastError: null },
+    });
+
+    await enqueueBatch('lead-ai-score', batches.map(leadIds => ({ campaignId, leadIds })));
+    res.json({ ok: true, stage: 'ai_scoring', total: leads.length, batches: batches.length });
+  } catch (e) { next(e); }
+});
+
 // POST /pipeline/:campaignId/generate-assets — trigger Opus asset generation
 router.post('/:campaignId/generate-assets', requireAuth, async (req, res, next) => {
   try {

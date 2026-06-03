@@ -24,6 +24,10 @@ export async function handleAiScore(job) {
     scored = result.scored || [];
   } catch (err) {
     console.error(`[AiScore] Campaign ${campaignId} batch error:`, err.message);
+    await prisma.campaignPipeline.update({
+      where: { campaignId },
+      data: { lastError: `AI Scoring failed: ${err.message}` },
+    }).catch(() => {});
     throw err;
   }
 
