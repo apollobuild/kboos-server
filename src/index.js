@@ -1,23 +1,6 @@
-import { execSync } from 'child_process';
 import express from 'express';
 import cors from 'cors';
 import { sendMessageToSession, getWarmupLimit } from './services/openwa.js';
-
-// Sync schema at startup using 1 connection — leaves room for old container during rolling deploy
-if (process.env.DATABASE_URL) {
-  const syncUrl = process.env.DATABASE_URL.split('?')[0] + '?connection_limit=1&pool_timeout=60';
-  try {
-    console.log('[Startup] Syncing DB schema…');
-    execSync('npx prisma db push --skip-generate', {
-      env: { ...process.env, DATABASE_URL: syncUrl },
-      stdio: 'inherit',
-      timeout: 120000,
-    });
-    console.log('[Startup] DB schema in sync');
-  } catch (e) {
-    console.error('[Startup] Schema sync failed (non-fatal):', e.message);
-  }
-}
 
 import authRoutes from './routes/auth.js';
 import businessRoutes from './routes/businesses.js';

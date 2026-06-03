@@ -1,5 +1,5 @@
 -- MetaWANumber: store multiple Meta Cloud API phone numbers per tenant
-CREATE TABLE "MetaWANumber" (
+CREATE TABLE IF NOT EXISTS "MetaWANumber" (
   "id"            SERIAL NOT NULL,
   "tenantId"      TEXT NOT NULL DEFAULT 'default',
   "label"         TEXT NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE "MetaWANumber" (
   "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "MetaWANumber_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "MetaWANumber_tenantId_idx" ON "MetaWANumber"("tenantId");
+CREATE INDEX IF NOT EXISTS "MetaWANumber_tenantId_idx" ON "MetaWANumber"("tenantId");
 
 -- Add WA number selector to Campaign
 ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "waNumberId" INTEGER;
