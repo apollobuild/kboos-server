@@ -152,6 +152,29 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString(), version: process.env.npm_package_version || '1.0.0', queue: queueState }));
 
+// Diagnostic view: job states + pipeline progress, readable from a browser
+app.get('/health/pipeline', async (_, res) => {
+  try {
+    const jobs = await prisma.$queryRaw`
+      SELECT name, state, COUNT(*)::int AS count
+      FROM pgboss.job
+      WHERE name IN ('lead-ai-score', 'lead-personalize', 'ai-asset-gen')
+      GROUP BY name, state ORDER BY name, state`;
+    const archived = await prisma.$queryRaw`
+      SELECT name, state, COUNT(*)::int AS count
+      FROM pgboss.archive
+      WHERE name IN ('lead-ai-score', 'lead-personalize', 'ai-asset-gen')
+      GROUP BY name, state ORDER BY name, state`.catch(() => []);
+    const pipelines = await prisma.$queryRaw`
+      SELECT "campaignId", stage, "aiScoreTotal", "aiScoreComplete",
+             "personalizeTotal", "personalizeComplete", "lastError"
+      FROM "CampaignPipeline" ORDER BY "campaignId"`;
+    res.json({ queue: queueState, jobs, archived, pipelines });
+  } catch (e) {
+    res.status(500).json({ error: e.message, queue: queueState });
+  }
+});
+
 app.use('/auth/login', authLimiter);
 app.use(apiLimiter);
 app.use('/auth', authRoutes);
