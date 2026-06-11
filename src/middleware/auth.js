@@ -10,6 +10,8 @@ export function requireAuth(req, res, next) {
   }
   try {
     req.user = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    // Tokens issued before multi-tenancy have no tenantId claim — default them
+    if (!req.user.tenantId) req.user.tenantId = 'default';
     // Fire-and-forget: update lastActiveAt at most once every 30 seconds per user
     const uid = req.user.id;
     const now = Date.now();

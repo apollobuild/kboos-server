@@ -178,7 +178,7 @@ router.get('/spend-summary', requireAuth, async (req, res, next) => {
   try {
     const tid = req.user.tenantId;
     // Include legacy records stored before tenantId was tracked (tagged as 'default')
-    const tidFilter = tid !== 'default' ? { in: [tid, 'default'] } : 'default';
+    const tidFilter = tid && tid !== 'default' ? { in: [tid, 'default'] } : 'default';
     const now = new Date();
     const allTime = req.query.all === '1';
     const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
