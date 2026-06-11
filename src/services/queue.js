@@ -2,6 +2,9 @@ import { PgBoss } from 'pg-boss';
 
 let boss = null;
 
+// Surfaced on /health so a dead queue is visible without log access
+export const queueState = { started: false, workersRegistered: false, error: null, startedAt: null };
+
 const QUEUE_NAMES = [
   'lead-qualify',
   'lead-enrichment',
@@ -28,7 +31,13 @@ export async function startQueue() {
     max: 3,
   });
   boss.on('error', err => console.error('[Queue] pg-boss error:', err.message));
-  await boss.start();
+  try {
+    await boss.start();
+  } catch (err) {
+    boss = null; // leave clean state so a retry can create a fresh instance
+    queueState.error = err.message;
+    throw err;
+  }
 
   // pg-boss v12 requires explicit queue creation before send/work
   for (const name of QUEUE_NAMES) {
@@ -42,6 +51,9 @@ export async function startQueue() {
     }
   }
 
+  queueState.started = true;
+  queueState.startedAt = new Date().toISOString();
+  queueState.error = null;
   console.log('[Queue] pg-boss started, all queues ready');
   return boss;
 }

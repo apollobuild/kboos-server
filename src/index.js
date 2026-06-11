@@ -35,7 +35,7 @@ import internalRoutes from './routes/internal.js';
 import cron from 'node-cron';
 import { runTick } from './engine/campaignRunner.js';
 import { clearExpired } from './services/aiCache.js';
-import { startQueue, enqueue } from './services/queue.js';
+import { startQueue, enqueue, queueState } from './services/queue.js';
 import { startWorkers } from './workers/index.js';
 import prisma from './db.js';
 async function scanMeetingReminders() {
@@ -150,7 +150,7 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: t
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString(), version: process.env.npm_package_version || '1.0.0' }));
+app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString(), version: process.env.npm_package_version || '1.0.0', queue: queueState }));
 
 app.use('/auth/login', authLimiter);
 app.use(apiLimiter);
@@ -202,15 +202,24 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-// Start queue BEFORE accepting requests to avoid race conditions
+// Start queue BEFORE accepting requests to avoid race conditions.
+// Retry on failure — a transient DB hiccup at boot must not leave the
+// queue dead for the whole life of the deployment.
 (async () => {
-  try {
-    await startQueue();
-    await startWorkers();
-    console.log('[Queue] pg-boss workers started');
-  } catch (err) {
-    console.error('[Queue] Failed to start workers:', err.message);
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await startQueue();
+      await startWorkers();
+      queueState.workersRegistered = true;
+      console.log('[Queue] pg-boss workers started');
+      return;
+    } catch (err) {
+      queueState.error = err.message;
+      console.error(`[Queue] Failed to start workers (attempt ${attempt}/5):`, err.message);
+      await new Promise(r => setTimeout(r, 10000));
+    }
   }
+  console.error('[Queue] Workers permanently failed to start — background jobs will NOT run');
 })();
 
 app.listen(PORT, () => {
