@@ -332,7 +332,7 @@ router.post('/:campaignId/ai-score', requireAuth, async (req, res, next) => {
       select: { id: true },
     });
 
-    const BATCH_SIZE = 50;
+    const BATCH_SIZE = 25; // 50-lead batches overflow the model's output token cap and truncate the JSON
     const batches = [];
     for (let i = 0; i < leads.length; i += BATCH_SIZE) {
       batches.push(leads.slice(i, i + BATCH_SIZE).map(l => l.id));
@@ -365,7 +365,7 @@ router.post('/:campaignId/retry-ai-score', requireAuth, async (req, res, next) =
       select: { id: true },
     });
 
-    const BATCH_SIZE = 50;
+    const BATCH_SIZE = 25; // 50-lead batches overflow the model's output token cap and truncate the JSON
     const batches = [];
     for (let i = 0; i < leads.length; i += BATCH_SIZE) {
       batches.push(leads.slice(i, i + BATCH_SIZE).map(l => l.id));
@@ -481,7 +481,7 @@ router.post('/:campaignId/personalize', requireAuth, async (req, res, next) => {
       return res.json({ ok: true, total: 0 });
     }
 
-    const BATCH_SIZE = 50;
+    const BATCH_SIZE = 25; // 50-lead batches overflow the model's output token cap and truncate the JSON
     const batches = [];
     for (let i = 0; i < leads.length; i += BATCH_SIZE) {
       batches.push(leads.slice(i, i + BATCH_SIZE).map(l => l.id));

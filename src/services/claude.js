@@ -12,7 +12,15 @@ async function getClient() {
 function parseJSON(text) {
   // Strip markdown code fences if Claude wraps the response
   const cleaned = text.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Model sometimes adds prose around the JSON — extract the outermost object
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+    throw e;
+  }
 }
 
 export async function generateBrief({ name, industry, website, service, audience, usps, tone, lang, tenantConfig = {}, tenantId = 'default' }) {
@@ -659,7 +667,7 @@ export async function batchPersonalizeLeads({ bizName, offer, dreamOutcome, targ
 
   const msg = await client.messages.create({
     model,
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: `You are a hyper-personalisation engine for B2B outreach in ${market}. Generate unique, specific opening lines for each lead. Each line must feel like it was written by a human who researched this specific company. Never generic. Return only valid JSON.`,
     messages: [{
       role: 'user',
@@ -730,8 +738,8 @@ export async function scoreLeadsWithAI({ leads, campaign, tenantId = 'default' }
 
   const msg = await client.messages.create({
     model,
-    max_tokens: 4096,
-    system: 'You are a B2B lead scoring engine. Score each lead 0-100 based on: data completeness, business quality, decision-maker seniority, contact reachability. Return only valid JSON.',
+    max_tokens: 8192,
+    system: 'You are a B2B lead scoring engine. Score each lead 0-100 based on: data completeness, business quality, decision-maker seniority, contact reachability. Keep each aiScoreReason under 15 words. Return only valid JSON.',
     messages: [{
       role: 'user',
       content: `CAMPAIGN: "${campaign.name}"

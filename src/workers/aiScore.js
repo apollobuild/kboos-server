@@ -31,7 +31,9 @@ export async function handleAiScore(job) {
     throw err;
   }
 
+  const validIds = new Set(leads.map(l => l.id));
   for (const s of scored) {
+    if (!validIds.has(s.leadId)) continue; // model returned an ID outside this batch — skip, don't kill the batch
     const aiTier = s.aiScore >= 70 ? 'A' : s.aiScore >= 40 ? 'B' : 'C';
     await prisma.lead.update({
       where: { id: s.leadId },
@@ -40,25 +42,22 @@ export async function handleAiScore(job) {
         aiScoreReason: s.aiScoreReason,
         tier: aiTier,
       },
-    });
+    }).catch(err => console.error(`[AiScore] Lead ${s.leadId} update failed:`, err.message));
   }
 
-  // Update pipeline progress
-  const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+  // Update pipeline progress — atomic increment so concurrent batches don't lose counts
+  const pipeline = await prisma.campaignPipeline.update({
+    where: { campaignId },
+    data: { aiScoreComplete: { increment: leads.length } },
+  }).catch(() => null);
+
   if (pipeline) {
-    const newComplete = (pipeline.aiScoreComplete || 0) + leads.length;
-    const total = pipeline.aiScoreTotal || newComplete;
-    const isDone = newComplete >= total;
-
-    await prisma.campaignPipeline.update({
-      where: { campaignId },
-      data: {
-        aiScoreComplete: newComplete,
-        ...(isDone ? { stage: 'ai_content_ready', aiScoredAt: new Date() } : {}),
-      },
-    });
-
-    if (isDone) {
+    const total = pipeline.aiScoreTotal || pipeline.aiScoreComplete;
+    if (pipeline.aiScoreComplete >= total) {
+      await prisma.campaignPipeline.update({
+        where: { campaignId },
+        data: { stage: 'ai_content_ready', aiScoredAt: new Date() },
+      });
       console.log(`[AiScore] Campaign ${campaignId}: all ${total} leads scored — stage → ai_content_ready`);
     }
   }
