@@ -39,7 +39,12 @@ export function formatCurrencyServer(amount, currency = 'MYR') {
 
 export function isValidMobile(phone, mobilePrefix = '+60') {
   if (!phone) return false;
-  const digits = phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
   const prefixDigits = mobilePrefix.replace(/\D/g, '');
-  return digits.startsWith(prefixDigits) && digits.length >= 8 && digits.length <= 15;
+  // Accept local format (e.g. 012-345 6789) by normalizing to the country code
+  if (digits.startsWith('0') && !digits.startsWith(prefixDigits)) digits = prefixDigits + digits.slice(1);
+  if (!digits.startsWith(prefixDigits)) return false;
+  // Malaysia: only 601x numbers are mobiles — 603/604/… are landlines, not on WhatsApp
+  if (prefixDigits === '60') return /^601\d{8,9}$/.test(digits);
+  return digits.length >= 8 && digits.length <= 15;
 }

@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { enqueue, enqueueBatch } from '../services/queue.js';
 import { getApiKey } from '../services/apiKeys.js';
 import { generateCampaignAssets } from '../services/claude.js';
+import { isValidMobile } from '../services/tenantConfig.js';
 import prisma from '../db.js';
 
 const router = Router();
@@ -533,8 +534,8 @@ router.post('/:campaignId/configure-channels', requireAuth, async (req, res, nex
 
     for (const lead of leads) {
       const hasEmail = channels.includes('email') && !!(lead.email && lead.email.includes('@') && lead.email.includes('.'));
-      const digits = (lead.phone || '').replace(/\D/g, '');
-      const hasWa = channels.includes('wa') && !!(lead.phone && digits.startsWith('60') && digits.length >= 10 && digits.length <= 12);
+      // Mobile-only check: 601x is WhatsApp-capable, 603/604/… landlines are not
+      const hasWa = channels.includes('wa') && isValidMobile(lead.phone);
       const hasVoice = channels.includes('voice') && !!lead.phone;
 
       if (channels.includes('email')) { hasEmail ? (emailEligible++, emailEligibleIds.push(lead.id)) : (emailIneligible++, emailIneligibleIds.push(lead.id)); }
