@@ -132,6 +132,7 @@ async function runWASequenceStep() {
 }
 
 const app = express();
+app.set('trust proxy', 1); // Railway runs behind a proxy — required for rate limiting to see real client IPs
 const PORT = process.env.PORT || 4000;
 
 const allowedOrigins = process.env.FRONTEND_URL.split(',').map(s => s.trim()).filter(Boolean);
