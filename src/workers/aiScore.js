@@ -2,8 +2,22 @@ import { scoreLeadsWithAI } from '../services/claude.js';
 import prisma from '../db.js';
 
 export async function handleAiScore(job) {
-  const { campaignId, leadIds } = job.data;
+  const { campaignId, leadIds } = job.data || {};
+  try {
+    await runAiScore(campaignId, leadIds);
+  } catch (err) {
+    console.error(`[AiScore] Campaign ${campaignId} job failed:`, err.message);
+    if (campaignId) {
+      await prisma.campaignPipeline.update({
+        where: { campaignId },
+        data: { lastError: `AI Scoring failed: ${err.message}` },
+      }).catch(() => {});
+    }
+    throw err;
+  }
+}
 
+async function runAiScore(campaignId, leadIds) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error(`Campaign ${campaignId} not found`);
 

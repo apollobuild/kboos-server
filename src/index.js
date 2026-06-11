@@ -169,7 +169,14 @@ app.get('/health/pipeline', async (_, res) => {
       SELECT "campaignId", stage, "aiScoreTotal", "aiScoreComplete",
              "personalizeTotal", "personalizeComplete", "lastError"
       FROM "CampaignPipeline" ORDER BY "campaignId"`;
-    res.json({ queue: queueState, jobs, archived, pipelines });
+    const recentFailures = await prisma.$queryRaw`
+      SELECT name, state, data->>'campaignId' AS campaign, output, "completedOn"
+      FROM pgboss.job
+      WHERE name IN ('lead-ai-score', 'lead-personalize', 'ai-asset-gen')
+        AND state IN ('failed', 'retry')
+      ORDER BY "completedOn" DESC NULLS LAST
+      LIMIT 5`.catch(() => []);
+    res.json({ queue: queueState, jobs, archived, pipelines, recentFailures });
   } catch (e) {
     res.status(500).json({ error: e.message, queue: queueState });
   }

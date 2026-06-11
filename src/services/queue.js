@@ -77,7 +77,14 @@ export async function enqueueBatch(queueName, items, opts = {}) {
 }
 
 export async function registerWorker(queueName, concurrency, handler) {
-  return getQueue().work(queueName, { teamSize: concurrency, teamConcurrency: concurrency }, handler);
+  // pg-boss v10+ passes an ARRAY of jobs to the handler (batch API), but all
+  // our handlers are written for a single job — every job crashed on
+  // `job.data` before this unwrap. batchSize 1 preserves per-job retry
+  // semantics; the old teamSize/teamConcurrency options no longer exist.
+  return getQueue().work(queueName, { batchSize: 1 }, async (jobs) => {
+    const list = Array.isArray(jobs) ? jobs : [jobs];
+    for (const job of list) await handler(job);
+  });
 }
 
 export async function getQueueStats() {
