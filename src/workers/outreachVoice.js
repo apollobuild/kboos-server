@@ -16,6 +16,11 @@ export async function handleOutreachVoice(job) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: elig.voiceReason } });
     return;
   }
+  // The pipeline's channel-strategy step writes eligibility onto the lead itself
+  if (lead.eligibilityChecked && !lead.voiceEligible) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'Not voice-eligible' } });
+    return;
+  }
   if (!lead.phone) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'failed', errorMsg: 'No phone' } });
     return;

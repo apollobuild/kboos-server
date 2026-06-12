@@ -19,6 +19,11 @@ export async function handleOutreachEmail(job) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: elig.emailReason } });
     return;
   }
+  // The pipeline's channel-strategy step writes eligibility onto the lead itself
+  if (lead.eligibilityChecked && !lead.emailEligible) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'Not email-eligible' } });
+    return;
+  }
   if (!lead.email) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'No email' } });
     return;

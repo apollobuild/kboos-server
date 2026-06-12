@@ -1,5 +1,6 @@
 import { sendMessage, sendTemplate } from '../services/wati.js';
 import { injectPersonalization } from '../services/leadScoring.js';
+import { isValidMobile } from '../services/tenantConfig.js';
 import prisma from '../db.js';
 
 export async function handleOutreachWa(job) {
@@ -16,8 +17,17 @@ export async function handleOutreachWa(job) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: elig.waReason } });
     return;
   }
+  // The pipeline's channel-strategy step writes eligibility onto the lead itself
+  if (lead.eligibilityChecked && !lead.waEligible) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'Not WhatsApp-eligible' } });
+    return;
+  }
   if (!lead.phone) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'No phone' } });
+    return;
+  }
+  if (!isValidMobile(lead.phone)) {
+    if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'skipped', errorMsg: 'Landline or invalid mobile — not on WhatsApp' } });
     return;
   }
 

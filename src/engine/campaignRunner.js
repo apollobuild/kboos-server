@@ -1,13 +1,6 @@
 import { enqueue } from '../services/queue.js';
 import prisma from '../db.js';
 
-function deriveStatus(type) {
-  if (type === 'wa') return 'contacted';
-  if (type === 'email') return 'emailed';
-  if (type === 'call') return 'called';
-  return 'contacted';
-}
-
 function isWithinSendWindow(now) {
   // 9am–6pm Malaysia time (UTC+8)
   const klOffset = 8 * 60;
@@ -85,13 +78,20 @@ export async function runTick() {
         const skipStatuses = ['unsubscribed', 'bounced'];
         if (step.skipIfReplied) skipStatuses.push('replied', 'hot', 'meeting_booked');
 
+        // Exclude leads the channel-strategy step marked ineligible for this
+        // channel; unchecked leads still pass (the worker re-checks anyway)
+        const channelFilter = step.type === 'email'
+          ? { email: { not: '' }, NOT: { eligibilityChecked: true, emailEligible: false } }
+          : step.type === 'wa'
+            ? { phone: { not: '' }, NOT: { eligibilityChecked: true, waEligible: false } }
+            : { phone: { not: '' }, NOT: { eligibilityChecked: true, voiceEligible: false } };
+
         const leads = await prisma.lead.findMany({
           where: {
             campaignId: campaign.id,
             id: { notIn: actionedIds.length ? actionedIds : [-1] },
             status: { notIn: skipStatuses },
-            ...(step.type === 'email' ? { email: { not: '' } } : {}),
-            ...(step.type !== 'email' ? { phone: { not: '' } } : {}),
+            ...channelFilter,
           },
           take: budget,
         });
@@ -123,14 +123,9 @@ export async function runTick() {
             actionId: action.id,
           });
 
-          // Optimistically advance lead status on first contact
-          const isFirstContact = ['new', 'scraped', 'personalizing'].includes(lead.status);
-          if (isFirstContact) {
-            await prisma.lead.update({
-              where: { id: lead.id },
-              data: { lastContactedAt: now, status: deriveStatus(step.type) },
-            });
-          }
+          // Lead status and lastContactedAt are set by the outreach worker
+          // after a confirmed send — never here, or skipped/failed sends
+          // would still show as "contacted" in the dashboard
 
           budget--;
           totalEnqueued++;
