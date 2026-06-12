@@ -176,7 +176,13 @@ app.get('/health/pipeline', async (_, res) => {
         AND state IN ('failed', 'retry')
       ORDER BY "completedOn" DESC NULLS LAST
       LIMIT 5`.catch(() => []);
-    res.json({ queue: queueState, jobs, archived, pipelines, recentFailures });
+    const enrichment = await prisma.$queryRaw`
+      SELECT "campaignId", COALESCE("enrichmentNote", '(no note)') AS note, COUNT(*)::int AS count
+      FROM "Lead"
+      WHERE enriched = true
+      GROUP BY "campaignId", "enrichmentNote"
+      ORDER BY "campaignId", count DESC`.catch(() => []);
+    res.json({ queue: queueState, jobs, archived, pipelines, recentFailures, enrichment });
   } catch (e) {
     res.status(500).json({ error: e.message, queue: queueState });
   }
