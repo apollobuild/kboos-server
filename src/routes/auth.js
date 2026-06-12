@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { requireAuth } from '../middleware/auth.js';
 import prisma from '../db.js';
+import { publicAppUrl } from '../config/env.js';
 
 const router = Router();
 function getTenantSlug(req) {
@@ -118,7 +119,7 @@ router.post('/forgot-password', async (req, res, next) => {
         data: { inviteToken: resetToken },
       });
 
-      const frontendUrl = process.env.FRONTEND_URL;
+      const frontendUrl = publicAppUrl();
       const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
       // Best-effort email send — non-fatal if SendGrid not configured
@@ -182,7 +183,7 @@ router.post('/invite', requireAuth, async (req, res, next) => {
       },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = publicAppUrl();
     const inviteUrl = `${frontendUrl}/set-password?token=${inviteToken}`;
 
     try {

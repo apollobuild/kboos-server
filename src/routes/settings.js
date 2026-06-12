@@ -9,6 +9,7 @@ import { testConnection as testWati } from '../services/wati.js';
 import { testConnection as testOutscraper } from '../services/outscraper.js';
 import { testConnection as testVapi } from '../services/vapi.js';
 import prisma from '../db.js';
+import { publicAppUrl } from '../config/env.js';
 
 const router = Router();
 router.get('/', requireAuth, async (req, res, next) => {
@@ -110,7 +111,7 @@ router.post('/users/:id/resend-invite', requireAdmin, async (req, res, next) => 
     const inviteToken = randomBytes(32).toString('hex');
     await prisma.user.update({ where: { id: req.params.id }, data: { inviteToken } });
 
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = publicAppUrl();
     const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
 
     try {
@@ -316,7 +317,7 @@ router.post('/user', requireAdmin, async (req, res, next) => {
       data: { email, password: placeholder, name, role: role || 'operator', bizId, inviteToken, tenantId: tid },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = publicAppUrl();
     const inviteLink = `${frontendUrl}?invite=${inviteToken}`;
 
     try {

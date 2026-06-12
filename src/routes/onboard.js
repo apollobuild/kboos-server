@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import crypto from 'crypto';
 import prisma from '../db.js';
+import { publicAppUrl } from '../config/env.js';
 
 const router = Router();
 // Internal: generate a one-time onboard link for a business
@@ -26,7 +27,7 @@ router.post('/generate-token', requireAuth, async (req, res, next) => {
       data: { bizId, bizName: biz.name, token, expiresAt },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = publicAppUrl();
     res.json({ token: created.token, url: `${frontendUrl}/Onboarding/${created.token}`, expiresAt });
   } catch (e) { next(e); }
 });
@@ -39,7 +40,7 @@ router.get('/link/:bizId', requireAuth, async (req, res, next) => {
       orderBy: { createdAt: 'desc' },
     });
     if (!token) return res.json({ url: null });
-    const frontendUrl = process.env.FRONTEND_URL;
+    const frontendUrl = publicAppUrl();
     res.json({ token: token.token, url: `${frontendUrl}/Onboarding/${token.token}`, expiresAt: token.expiresAt });
   } catch (e) { next(e); }
 });

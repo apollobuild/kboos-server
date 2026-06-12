@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { getApiKey } from '../services/apiKeys.js';
 import prisma from '../db.js';
+import { publicAppUrl } from '../config/env.js';
 
 const router = Router();
 // In-memory FX cache — survives per-process lifetime, DB persists across restarts
@@ -84,7 +85,7 @@ router.post('/topup/initiate', requireAdmin, async (req, res, next) => {
     });
 
     const callbackUrl = `${process.env.APP_URL}/wallet/webhook`;
-    const redirectUrl = `${process.env.FRONTEND_URL}/settings?tab=wallet&topup=done`;
+    const redirectUrl = `${publicAppUrl()}/settings?tab=wallet&topup=done`;
 
     const body = new URLSearchParams({
       collection_id: collectionId,

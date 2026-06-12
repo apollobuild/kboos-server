@@ -16,3 +16,11 @@ export const DEBUG_KEY = process.env.DEBUG_KEY;
 export const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 export const META_WA_WEBHOOK_SECRET = process.env.META_WA_WEBHOOK_SECRET;
 export const APP_URL = process.env.APP_URL;
+
+// FRONTEND_URL is a comma-separated CORS allowlist; user-facing links
+// (onboarding, invites, password resets) need ONE url from it.
+// Prefer the custom https domain over the *.railway.app fallback.
+export function publicAppUrl() {
+  const urls = (process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean);
+  return urls.find(u => u.startsWith('https://') && !u.includes('railway.app')) || urls[0] || '';
+}
