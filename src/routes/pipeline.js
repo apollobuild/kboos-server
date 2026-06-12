@@ -2,7 +2,10 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { enqueue, enqueueBatch } from '../services/queue.js';
 import { getApiKey } from '../services/apiKeys.js';
-import { generateCampaignAssets } from '../services/claude.js';
+import { generateCampaignAssets, testConnection as testClaude } from '../services/claude.js';
+import { testConnection as testSendGrid } from '../services/sendgrid.js';
+import { testConnection as testWati } from '../services/wati.js';
+import { testConnection as testVapi } from '../services/vapi.js';
 import { isValidMobile } from '../services/tenantConfig.js';
 import prisma from '../db.js';
 
@@ -12,6 +15,23 @@ const router = Router();
 async function getCampaign(campaignId, tid) {
   const c = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId: tid } });
   return c || null;
+}
+
+// Default outreach cadence when a campaign reaches launch without sequence
+// steps (Quick Setup campaigns never get one) — the engine silently skips
+// campaigns with an empty sequence, so launching without this sends nothing
+function buildDefaultSequence(channels = []) {
+  const seq = [];
+  if (channels.includes('wa')) {
+    seq.push({ day: 1, type: 'wa' }, { day: 4, type: 'wa', skipIfReplied: true });
+  }
+  if (channels.includes('email')) {
+    seq.push({ day: 2, type: 'email' }, { day: 6, type: 'email', skipIfReplied: true });
+  }
+  if (channels.includes('voice') || channels.includes('call')) {
+    seq.push({ day: 5, type: 'call', skipIfReplied: true });
+  }
+  return seq;
 }
 
 // GET /pipeline/:campaignId — full pipeline status
@@ -630,46 +650,63 @@ router.post('/:campaignId/run-deliverability', requireAuth, async (req, res, nex
     const campaign = await getCampaign(campaignId, tid);
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
+    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } });
+    const channels = (pipeline?.channelConfig?.channels?.length ? pipeline.channelConfig.channels : campaign.channels) || [];
+    const usesVoice = channels.includes('voice') || channels.includes('call');
+
     const checks = [];
     let score = 100;
 
-    try {
-      const k = await getApiKey('claude');
-      checks.push({ label: 'Claude AI', pass: !!k, detail: k ? 'Connected' : 'API key missing' });
-      if (!k) score -= 30;
-    } catch { score -= 30; checks.push({ label: 'Claude AI', pass: false, detail: 'Error checking key' }); }
+    // Live connection tests, not just "is a key saved" — only for selected channels
+    {
+      const k = await getApiKey('claude').catch(() => null);
+      const ok = k ? await testClaude(k).catch(() => false) : false;
+      checks.push({ label: 'Claude AI', pass: ok, detail: ok ? 'Connected' : (k ? 'Key saved but connection test failed' : 'API key missing') });
+      if (!ok) score -= 30;
+    }
 
-    try {
-      const k = await getApiKey('sendgrid');
-      checks.push({ label: 'SendGrid Email', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — email channel disabled' });
-      if (!k) score -= 20;
-    } catch { score -= 20; checks.push({ label: 'SendGrid Email', pass: null, detail: 'Error checking key' }); }
+    if (channels.includes('email')) {
+      const k = await getApiKey('sendgrid').catch(() => null);
+      const ok = k ? await testSendGrid(k).catch(() => false) : false;
+      checks.push({ label: 'SendGrid Email', pass: ok, detail: ok ? 'Connected' : (k ? 'Key saved but connection test failed' : 'API key missing — email sends will fail') });
+      if (!ok) score -= 25;
+    } else {
+      checks.push({ label: 'SendGrid Email', pass: null, detail: 'Email channel not selected — skipped' });
+    }
 
-    try {
-      const k = await getApiKey('wati');
-      checks.push({ label: 'WATI WhatsApp', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — WhatsApp channel disabled' });
-      if (!k) score -= 20;
-    } catch { score -= 20; checks.push({ label: 'WATI WhatsApp', pass: null, detail: 'Error checking key' }); }
+    if (channels.includes('wa')) {
+      const k = await getApiKey('wati').catch(() => null);
+      const url = await getApiKey('wati_url').catch(() => null);
+      const ok = k ? await testWati(k, url).catch(() => false) : false;
+      checks.push({ label: 'WATI WhatsApp', pass: ok, detail: ok ? 'Connected' : (k ? 'Token saved but connection test failed' : 'Token missing — WhatsApp sends will fail') });
+      if (!ok) score -= 25;
+    } else {
+      checks.push({ label: 'WATI WhatsApp', pass: null, detail: 'WhatsApp channel not selected — skipped' });
+    }
 
-    try {
-      const k = await getApiKey('vapi');
-      checks.push({ label: 'Vapi Voice', pass: k ? true : null, detail: k ? 'Connected' : 'API key missing — voice channel disabled' });
-      if (!k) score -= 10;
-    } catch { score -= 10; checks.push({ label: 'Vapi Voice', pass: null, detail: 'Error checking key' }); }
+    if (usesVoice) {
+      const k = await getApiKey('vapi').catch(() => null);
+      const ok = k ? await testVapi(k).catch(() => false) : false;
+      checks.push({ label: 'Vapi Voice', pass: ok, detail: ok ? 'Connected' : (k ? 'Key saved but connection test failed' : 'API key missing — voice calls will fail') });
+      if (!ok) score -= 15;
+    }
 
-    const eligibleCount = await prisma.lead.count({
-      where: {
-        campaignId, tenantId: tid,
-        eligibilityChecked: true,
-        OR: [{ emailEligible: true }, { waEligible: true }, { voiceEligible: true }],
-      },
-    });
-    checks.push({
-      label: 'Eligible Leads',
-      pass: eligibleCount > 0,
-      detail: `${eligibleCount} leads ready for outreach`,
-    });
-    if (eligibleCount === 0) score -= 30;
+    // Per-channel eligible leads — a channel with zero reachable leads sends nothing
+    const eligibilityFields = { email: 'emailEligible', wa: 'waEligible', voice: 'voiceEligible' };
+    for (const [ch, field] of Object.entries(eligibilityFields)) {
+      if (!(channels.includes(ch) || (ch === 'voice' && usesVoice))) continue;
+      const count = await prisma.lead.count({ where: { campaignId, tenantId: tid, [field]: true } });
+      checks.push({ label: `${ch === 'wa' ? 'WhatsApp' : ch === 'email' ? 'Email' : 'Voice'}-eligible leads`, pass: count > 0, detail: `${count} leads can receive this channel` });
+      if (count === 0) score -= 20;
+    }
+
+    // Approved assets per channel — the senders refuse unapproved content
+    for (const ch of ['email', 'wa', 'voice']) {
+      if (!(channels.includes(ch) || (ch === 'voice' && usesVoice))) continue;
+      const count = await prisma.campaignAsset.count({ where: { campaignId, channel: ch, approved: true } });
+      checks.push({ label: `Approved ${ch === 'wa' ? 'WhatsApp' : ch} assets`, pass: count > 0, detail: count > 0 ? `${count} approved` : 'None approved — approve in the AI Assets step' });
+      if (count === 0) score -= 20;
+    }
 
     const finalScore = Math.max(0, score);
     await prisma.campaignPipeline.update({
@@ -717,10 +754,31 @@ router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: `Cannot launch from stage: ${pipeline?.stage || 'no pipeline'}` });
     }
 
+    // The engine skips campaigns with no sequence — build the default cadence
+    let sequence = Array.isArray(campaign.sequence) ? campaign.sequence : [];
+    if (!sequence.length) {
+      const channels = (pipeline.channelConfig?.channels?.length ? pipeline.channelConfig.channels : campaign.channels) || [];
+      sequence = buildDefaultSequence(channels);
+      if (!sequence.length) {
+        return res.status(400).json({ error: 'Campaign has no sequence steps and no channels configured — complete the Channel Strategy step first' });
+      }
+      await prisma.campaign.update({ where: { id: campaignId }, data: { sequence } });
+    }
+
+    // Every channel in the sequence needs at least one approved asset,
+    // since the senders refuse to send unapproved content
+    const seqChannels = [...new Set(sequence.map(s => (s.type === 'call' ? 'voice' : s.type)))];
+    for (const ch of seqChannels) {
+      const approvedCount = await prisma.campaignAsset.count({ where: { campaignId, channel: ch, approved: true } });
+      if (!approvedCount) {
+        return res.status(400).json({ error: `No approved ${ch} assets — approve at least one in the AI Assets step before launching` });
+      }
+    }
+
     await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'active', startedAt: new Date() } });
     await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'active', launchedAt: new Date() } });
 
-    res.json({ ok: true, stage: 'active' });
+    res.json({ ok: true, stage: 'active', sequenceSteps: sequence.length });
   } catch (e) { next(e); }
 });
 

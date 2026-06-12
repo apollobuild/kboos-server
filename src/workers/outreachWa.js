@@ -34,8 +34,10 @@ export async function handleOutreachWa(job) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   const config = campaign.config || {};
 
-  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, assetType: assetType || 'wa_1' } })
-    || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'wa' }, orderBy: { id: 'asc' } });
+  // Only approved assets are ever sent — try the step's assetType first,
+  // fall back to the first approved WA asset
+  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, assetType: assetType || 'wa_1', approved: true } })
+    || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'wa', approved: true }, orderBy: { id: 'asc' } });
 
   const personalization = await prisma.leadPersonalization.findUnique({ where: { leadId } });
 

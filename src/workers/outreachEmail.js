@@ -32,10 +32,11 @@ export async function handleOutreachEmail(job) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   const config = campaign.config || {};
 
-  // Get the asset — first try the specified assetType, fall back to email_1
+  // Only approved assets are ever sent — try the step's assetType first,
+  // fall back to the first approved email asset
   const asset = await prisma.campaignAsset.findFirst({
-    where: { campaignId, assetType: assetType || 'email_1' },
-  }) || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'email' }, orderBy: { id: 'asc' } });
+    where: { campaignId, assetType: assetType || 'email_1', approved: true },
+  }) || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'email', approved: true }, orderBy: { id: 'asc' } });
 
   const personalization = await prisma.leadPersonalization.findUnique({ where: { leadId } });
 

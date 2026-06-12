@@ -29,7 +29,10 @@ export async function handleOutreachVoice(job) {
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   const config = campaign.config || {};
 
-  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'voice', assetType: 'voice_opening' } });
+  // Only approved assets are ever sent. Note: assetGen creates voice_warm /
+  // voice_direct, not voice_opening, so the channel fallback is the usual path
+  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'voice', assetType: assetType || 'voice_warm', approved: true } })
+    || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'voice', approved: true }, orderBy: { id: 'asc' } });
   const personalization = await prisma.leadPersonalization.findUnique({ where: { leadId } });
 
   const voiceScript = asset ? injectPersonalization(asset.editedBody || asset.body, lead, personalization) : (config.voiceScript || '');
