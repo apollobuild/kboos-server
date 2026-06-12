@@ -69,9 +69,9 @@ router.get('/overview', requireAuth, async (req, res, next) => {
       prisma.campaign.count({ where: { status: 'active', tenantId: tid } }),
       prisma.lead.count({ where: { tenantId: tid } }),
       prisma.meetingLog.count({ where: { tenantId: tid } }),
-      prisma.campaignAction.count({ where: { type: 'email', tenantId: tid } }),
-      prisma.campaignAction.count({ where: { type: 'wa', tenantId: tid } }),
-      prisma.campaignAction.count({ where: { type: 'voice', tenantId: tid } }),
+      prisma.campaignAction.count({ where: { type: 'email', status: 'sent', tenantId: tid } }),
+      prisma.campaignAction.count({ where: { type: 'wa', status: 'sent', tenantId: tid } }),
+      prisma.campaignAction.count({ where: { type: { in: ['voice', 'call'] }, status: 'sent', tenantId: tid } }),
       prisma.activity.findMany({ where: { tenantId: tid }, orderBy: { createdAt: 'desc' }, take: 6 }),
     ]);
     res.json({ activeCampaigns, totalLeads, meetingsBooked, emailActions, waActions, voiceActions, recentActivity });
