@@ -74,9 +74,21 @@ export async function runTick() {
 
         const actioned = await prisma.campaignAction.findMany({
           where: { campaignId: campaign.id, stepDay: step.day, type: step.type },
-          select: { leadId: true },
+          select: { leadId: true, id: true, status: true, retryCount: true },
         });
-        const actionedIds = actioned.map(a => a.leadId);
+        // Only 'sent'/'pending' leads are off-limits. Failed/skipped leads are
+        // retryable (so fixing the cause re-sends to them) — reuse their row.
+        // Cap auto-retries so a permanently-broken send doesn't re-fire hourly
+        // forever; a manual "Retry failed sends" resets the counter.
+        const MAX_AUTO_RETRY = 6;
+        const blockedIds = [];
+        const retryActionByLead = {};
+        for (const a of actioned) {
+          if (a.status === 'sent' || a.status === 'pending') blockedIds.push(a.leadId);
+          else if ((a.retryCount || 0) >= MAX_AUTO_RETRY) blockedIds.push(a.leadId);
+          else retryActionByLead[a.leadId] = a.id;
+        }
+        const actionedIds = blockedIds;
 
         const skipStatuses = ['unsubscribed', 'bounced'];
         if (step.skipIfReplied) skipStatuses.push('replied', 'hot', 'meeting_booked');
@@ -107,23 +119,33 @@ export async function runTick() {
           : 'outreach-voice';
 
         for (const lead of leads) {
-          const action = await prisma.campaignAction.create({
-            data: {
-              leadId: lead.id,
-              campaignId: campaign.id,
-              type: step.type,
-              stepDay: step.day,
-              status: 'pending',
-              sentAt: now,
-            },
-          });
+          // Reuse the prior failed/skipped row on retry; otherwise create fresh
+          let actionId = retryActionByLead[lead.id];
+          if (actionId) {
+            await prisma.campaignAction.update({
+              where: { id: actionId },
+              data: { status: 'pending', sentAt: now, errorMsg: null },
+            });
+          } else {
+            const action = await prisma.campaignAction.create({
+              data: {
+                leadId: lead.id,
+                campaignId: campaign.id,
+                type: step.type,
+                stepDay: step.day,
+                status: 'pending',
+                sentAt: now,
+              },
+            });
+            actionId = action.id;
+          }
 
           await enqueue(queueName, {
             leadId: lead.id,
             campaignId: campaign.id,
             assetType,
             stepDay: step.day,
-            actionId: action.id,
+            actionId,
           });
 
           // Lead status and lastContactedAt are set by the outreach worker

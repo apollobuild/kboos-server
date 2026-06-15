@@ -788,6 +788,32 @@ router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// POST /pipeline/:campaignId/retry-sends — clear failed/skipped so the engine
+// re-attempts them (use after fixing the cause, e.g. approving a template)
+router.post('/:campaignId/retry-sends', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const tid = req.user.tenantId;
+
+    const campaign = await getCampaign(campaignId, tid);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    // Reset the retry counter so capped leads become eligible again; the next
+    // engine tick reuses these rows and re-sends
+    const { count } = await prisma.campaignAction.updateMany({
+      where: { campaignId, status: { in: ['failed', 'skipped'] } },
+      data: { retryCount: 0 },
+    });
+
+    // Kick an immediate tick so the retry happens now (within the send window)
+    import('../engine/campaignRunner.js')
+      .then(({ runTick }) => runTick())
+      .catch(err => console.error('[RetrySends] Immediate tick failed:', err.message));
+
+    res.json({ ok: true, requeued: count });
+  } catch (e) { next(e); }
+});
+
 // GET /pipeline/:campaignId/send-issues — delivery results + grouped failure reasons
 router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
   try {
