@@ -150,7 +150,19 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: t
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get('/health', (_, res) => res.json({ ok: true, time: new Date().toISOString(), version: process.env.npm_package_version || '1.0.0', queue: queueState }));
+app.get('/health', (_, res) => res.json({
+  ok: true,
+  time: new Date().toISOString(),
+  version: process.env.npm_package_version || '1.0.0',
+  queue: queueState,
+  // Booleans only — never the secret values — so config can be verified safely
+  config: {
+    metaWaWebhookSecret: !!(process.env.META_WA_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET),
+    frontendUrl: !!process.env.FRONTEND_URL,
+    jwtSecret: !!process.env.JWT_SECRET,
+    encryptionKey: !!process.env.ENCRYPTION_KEY,
+  },
+}));
 
 // Diagnostic view: job states + pipeline progress, readable from a browser
 app.get('/health/pipeline', async (_, res) => {
