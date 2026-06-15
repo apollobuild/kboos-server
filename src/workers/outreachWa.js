@@ -1,6 +1,7 @@
 import { sendMessage, sendTemplate } from '../services/wati.js';
 import { injectPersonalization } from '../services/leadScoring.js';
 import { isValidMobile } from '../services/tenantConfig.js';
+import { recordSendFailure } from '../engine/circuitBreaker.js';
 import prisma from '../db.js';
 
 export async function handleOutreachWa(job) {
@@ -72,6 +73,7 @@ export async function handleOutreachWa(job) {
     await prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date(), status: ['new','scraped','personalizing'].includes(lead.status) ? 'contacted' : lead.status } });
   } catch (err) {
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'failed', errorMsg: err.message, retryCount: { increment: 1 } } });
+    await recordSendFailure(campaignId, err.message);
     throw err;
   }
 }

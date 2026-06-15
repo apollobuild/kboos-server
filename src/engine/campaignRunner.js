@@ -63,6 +63,13 @@ export async function runTick() {
       const config = campaign.config || {};
       const pausedChannels = Array.isArray(config.pausedChannels) ? config.pausedChannels : [];
 
+      // Canary: until at least one send has succeeded, only send a small first
+      // batch. If the setup is broken, we lose a handful of attempts — not the
+      // whole list — before the circuit breaker auto-pauses the campaign.
+      const successfulSends = await prisma.campaignAction.count({ where: { campaignId: campaign.id, status: 'sent' } });
+      const CANARY_BATCH = 10;
+      if (successfulSends === 0) budget = Math.min(budget, CANARY_BATCH);
+
       for (let si = 0; si < sequence.length; si++) {
         const step = sequence[si];
         // "Day 1" means launch day (0 elapsed), so a step is due once

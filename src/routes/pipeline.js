@@ -805,6 +805,12 @@ router.post('/:campaignId/retry-sends', requireAuth, async (req, res, next) => {
       data: { retryCount: 0 },
     });
 
+    // Resume if the circuit breaker auto-paused it, and clear the error banner
+    if (campaign.status === 'paused') {
+      await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'active' } });
+    }
+    await prisma.campaignPipeline.update({ where: { campaignId }, data: { lastError: null } }).catch(() => {});
+
     // Kick an immediate tick so the retry happens now (within the send window)
     import('../engine/campaignRunner.js')
       .then(({ runTick }) => runTick())
