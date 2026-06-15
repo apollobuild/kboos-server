@@ -65,7 +65,10 @@ export async function runTick() {
 
       for (let si = 0; si < sequence.length; si++) {
         const step = sequence[si];
-        if (step.day > daysSinceStart) continue;
+        // "Day 1" means launch day (0 elapsed), so a step is due once
+        // daysSinceStart >= step.day - 1. Without the -1, day-1 steps never
+        // fired on launch day and the campaign sent nothing until +24h.
+        if ((step.day - 1) > daysSinceStart) continue;
         if (budget <= 0) break;
         if (pausedChannels.includes(step.type)) continue;
 

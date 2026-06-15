@@ -778,6 +778,12 @@ router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
     await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'active', startedAt: new Date() } });
     await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'active', launchedAt: new Date() } });
 
+    // Kick an immediate send tick so launching during business hours starts
+    // sending now instead of waiting for the top of the next hour
+    import('../engine/campaignRunner.js')
+      .then(({ runTick }) => runTick())
+      .catch(err => console.error('[Launch] Immediate tick failed:', err.message));
+
     res.json({ ok: true, stage: 'active', sequenceSteps: sequence.length });
   } catch (e) { next(e); }
 });
