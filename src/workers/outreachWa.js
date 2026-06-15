@@ -33,22 +33,40 @@ export async function handleOutreachWa(job) {
 
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   const config = campaign.config || {};
+  const firstName = lead.name?.split(' ')[0] || lead.name || '';
 
-  // Only approved assets are ever sent — try the step's assetType first,
-  // fall back to the first approved WA asset
-  const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, assetType: assetType || 'wa_1', approved: true } })
-    || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'wa', approved: true }, orderBy: { id: 'asc' } });
+  // WhatsApp rule: a free-form message is only allowed inside the 24h window
+  // AFTER the lead replies. Otherwise we MUST send an approved template.
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+  const recentReply = await prisma.reply.findFirst({
+    where: { leadId, channel: { in: ['wa', 'whatsapp'] }, createdAt: { gt: dayAgo } },
+    orderBy: { createdAt: 'desc' },
+  }).catch(() => null);
+  const sessionOpen = !!recentReply;
 
   const personalization = await prisma.leadPersonalization.findUnique({ where: { leadId } });
 
   try {
-    if (asset) {
-      const message = injectPersonalization(asset.editedBody || asset.body, lead, personalization);
+    if (sessionOpen) {
+      // Inside the 24h window — send the rich, AI-personalized free-form message
+      const asset = await prisma.campaignAsset.findFirst({ where: { campaignId, assetType: assetType || 'wa_1', approved: true } })
+        || await prisma.campaignAsset.findFirst({ where: { campaignId, channel: 'wa', approved: true }, orderBy: { id: 'asc' } });
+      const message = asset
+        ? injectPersonalization(asset.editedBody || asset.body, lead, personalization)
+        : `Hi ${firstName}, just following up — let me know if you'd like to hear more.`;
       await sendMessage({ phone: lead.phone, message });
     } else {
-      const templateName = config.waTemplateName || 'kboos_intro_v1';
-      const firstName = lead.name?.split(' ')[0] || lead.name;
-      await sendTemplate({ phone: lead.phone, templateName, parameters: [{ name: 'first_name', value: firstName }] });
+      // Cold / outside window — an approved WATI template is required
+      const templateName = config.waTemplateName;
+      if (!templateName) {
+        throw new Error('No WhatsApp template set. Add the approved WATI template name in the campaign launch settings (Sending Settings → WhatsApp Template) before sending cold messages.');
+      }
+      await sendTemplate({
+        phone: lead.phone,
+        templateName,
+        // {{1}} = first name (the recommended single-variable cold template)
+        parameters: [{ name: '1', value: firstName }],
+      });
     }
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'sent', jobId: job.id } });
     await prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date(), status: ['new','scraped','personalizing'].includes(lead.status) ? 'contacted' : lead.status } });

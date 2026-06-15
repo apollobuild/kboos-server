@@ -628,7 +628,8 @@ RULES:
 
 Generate:
 ${hasEmail ? '- 4 email variants (different angles: curiosity, social proof, direct question, future pacing)' : ''}
-${hasWa ? '- 3 WhatsApp variants (different hooks: benefit, problem, results)' : ''}
+${hasWa ? `- 1 COLD WHATSAPP TEMPLATE for the very first contact. This must be submitted to WhatsApp for approval, so: keep it under 45 words, polite and permission-based (ask if okay to share an idea), NO discounts/links/salesy claims (those get rejected), and use exactly one variable {{1}} for the lead's first name. This is the opener that earns a reply.
+- 3 WhatsApp follow-up variants (sent only after the lead replies; different hooks: benefit, problem, results)` : ''}
 ${hasVoice ? '- 2 voice variants (warm intro, direct opener)' : ''}
 
 Return JSON:
@@ -640,9 +641,10 @@ Return JSON:
     {"assetType":"email_4","label":"Future Pacing — Email 4","subject":"...","body":"...","notes":"..."}
   ],` : '"emails": [],'}
   ${hasWa ? `"whatsapps": [
-    {"assetType":"wa_1","label":"Benefit Hook — WA 1","body":"...","notes":"..."},
-    {"assetType":"wa_2","label":"Problem Angle — WA 2","body":"...","notes":"..."},
-    {"assetType":"wa_3","label":"Results Lead — WA 3","body":"...","notes":"..."}
+    {"assetType":"wa_cold_template","label":"Cold Opener — submit to WATI for approval","body":"Hi {{1}}, ... (<=45 words, permission-based, one {{1}} variable)","notes":"Submit this to WATI as a MARKETING template, then paste the approved template name into the campaign launch settings."},
+    {"assetType":"wa_1","label":"Follow-up — Benefit Hook","body":"...","notes":"Sent after the lead replies"},
+    {"assetType":"wa_2","label":"Follow-up — Problem Angle","body":"...","notes":"Sent after the lead replies"},
+    {"assetType":"wa_3","label":"Follow-up — Results Lead","body":"...","notes":"Sent after the lead replies"}
   ],` : '"whatsapps": [],'}
   ${hasVoice ? `"voice": {
     "warm": {"assetType":"voice_warm","label":"Warm Intro Script","body":"full 300-400 word voice agent system prompt","notes":"..."},

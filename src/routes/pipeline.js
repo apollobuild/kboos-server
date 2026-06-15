@@ -788,4 +788,43 @@ router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// GET /pipeline/:campaignId/send-issues — delivery results + grouped failure reasons
+router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
+  try {
+    const campaignId = parseInt(req.params.campaignId);
+    const tid = req.user.tenantId;
+
+    const campaign = await getCampaign(campaignId, tid);
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const [sent, failed, skipped] = await Promise.all([
+      prisma.campaignAction.groupBy({ by: ['type'], where: { campaignId, status: 'sent' }, _count: { id: true } }),
+      prisma.campaignAction.findMany({ where: { campaignId, status: 'failed' }, select: { type: true, errorMsg: true }, take: 500 }),
+      prisma.campaignAction.findMany({ where: { campaignId, status: 'skipped' }, select: { type: true, errorMsg: true }, take: 500 }),
+    ]);
+
+    // Group failures/skips by reason so the operator sees "X leads failed because Y"
+    const group = (rows) => {
+      const m = {};
+      for (const r of rows) {
+        const key = r.errorMsg || 'Unknown reason';
+        m[key] = (m[key] || 0) + 1;
+      }
+      return Object.entries(m).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count);
+    };
+
+    const sentByType = {};
+    for (const s of sent) sentByType[s.type] = s._count.id;
+
+    res.json({
+      sent: sentByType,
+      sentTotal: sent.reduce((n, s) => n + s._count.id, 0),
+      failedTotal: failed.length,
+      skippedTotal: skipped.length,
+      failures: group(failed),
+      skips: group(skipped),
+    });
+  } catch (e) { next(e); }
+});
+
 export default router;

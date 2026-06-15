@@ -15,19 +15,46 @@ export async function sendMessage({ phone, message }) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ messageText: message }),
   });
-  if (!res.ok) throw new Error(`WATI error: ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.result === false || data.ok === false) {
+    throw new Error(watiError(data, res.status, 'session message'));
+  }
+  return data;
 }
 
-export async function sendTemplate({ phone, templateName, parameters }) {
+export async function sendTemplate({ phone, templateName, parameters, broadcastName = 'kboos_blast' }) {
   const { token, baseUrl } = await getConfig();
-  const res = await fetch(`${baseUrl}/api/v1/sendTemplateMessage`, {
+  const res = await fetch(`${baseUrl}/api/v1/sendTemplateMessage?whatsappNumber=${encodeURIComponent(phone)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ whatsappNumber: phone, template_name: templateName, broadcast_name: 'kboos_blast', parameters }),
+    body: JSON.stringify({ template_name: templateName, broadcast_name: broadcastName, parameters }),
   });
-  if (!res.ok) throw new Error(`WATI error: ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.result === false || data.ok === false) {
+    throw new Error(watiError(data, res.status, `template "${templateName}"`));
+  }
+  return data;
+}
+
+// Turn WATI's varied error shapes into a human-readable reason the campaign
+// operator can act on
+function watiError(data, status, context) {
+  const raw = data?.info || data?.message || data?.error
+    || (Array.isArray(data?.errors) ? data.errors.map(e => e.error || e.message).join('; ') : null)
+    || data?.validationErrors
+    || `HTTP ${status}`;
+  let reason = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  // Map the most common causes to plain guidance
+  if (/template.*not.*found|no.*template|invalid template/i.test(reason)) {
+    reason = `WhatsApp template not found in WATI — check the template name is approved and spelled exactly. (${reason})`;
+  } else if (/24|session|window|not.*open|expired/i.test(reason)) {
+    reason = `Outside the 24-hour reply window — free-form messages can't be sent to this lead yet; an approved template is required. (${reason})`;
+  } else if (/not.*opt|opt.?in|consent/i.test(reason)) {
+    reason = `Lead has not opted in / not a valid WhatsApp contact. (${reason})`;
+  } else if (status === 401 || status === 403) {
+    reason = `WATI rejected the credentials — check the WATI token and API URL in Settings → API Keys. (${reason})`;
+  }
+  return `WATI (${context}): ${reason}`;
 }
 
 export async function testConnection(token, baseUrl) {
