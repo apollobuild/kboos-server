@@ -775,6 +775,13 @@ router.post('/:campaignId/launch', requireAuth, async (req, res, next) => {
       }
     }
 
+    // Cold WhatsApp outreach needs an approved WATI template — without it every
+    // cold send fails and the circuit breaker pauses the campaign. Block here so
+    // the template is set up front instead of leaving it silently stuck.
+    if (seqChannels.includes('wa') && !campaign.config?.waTemplateName?.trim()) {
+      return res.status(400).json({ error: 'No WhatsApp template set — add your approved WATI template name in Sending Settings (Launch step) before launching' });
+    }
+
     await prisma.campaign.update({ where: { id: campaignId }, data: { status: 'active', startedAt: new Date() } });
     await prisma.campaignPipeline.update({ where: { campaignId }, data: { stage: 'active', launchedAt: new Date() } });
 
