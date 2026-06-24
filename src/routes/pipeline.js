@@ -7,6 +7,7 @@ import { testConnection as testSendGrid } from '../services/sendgrid.js';
 import { testConnection as testWati } from '../services/wati.js';
 import { testConnection as testVapi } from '../services/vapi.js';
 import { isValidMobile } from '../services/tenantConfig.js';
+import { isWithinSendWindow } from '../engine/campaignRunner.js';
 import prisma from '../db.js';
 
 const router = Router();
@@ -836,10 +837,12 @@ router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
     const campaign = await getCampaign(campaignId, tid);
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    const [sent, failed, skipped] = await Promise.all([
+    const [sent, failed, skipped, pendingTotal, totalLeads] = await Promise.all([
       prisma.campaignAction.groupBy({ by: ['type'], where: { campaignId, status: 'sent' }, _count: { id: true } }),
       prisma.campaignAction.findMany({ where: { campaignId, status: 'failed' }, select: { type: true, errorMsg: true }, take: 500 }),
       prisma.campaignAction.findMany({ where: { campaignId, status: 'skipped' }, select: { type: true, errorMsg: true }, take: 500 }),
+      prisma.campaignAction.count({ where: { campaignId, status: 'pending' } }),
+      prisma.lead.count({ where: { campaignId } }),
     ]);
 
     // Group failures/skips by reason so the operator sees "X leads failed because Y"
@@ -854,14 +857,31 @@ router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
 
     const sentByType = {};
     for (const s of sent) sentByType[s.type] = s._count.id;
+    const sentTotal = sent.reduce((n, s) => n + s._count.id, 0);
+
+    // Engine-state signals so the panel can distinguish "healthy" from
+    // "silently doing nothing" — a campaign can sit at 0/0/0 because it's
+    // outside the send window, paused, has no template, or no leads, none of
+    // which the sent/failed/skipped counters reveal on their own.
+    const pipeline = await prisma.campaignPipeline.findUnique({ where: { campaignId } }).catch(() => null);
+    const channels = (pipeline?.channelConfig?.channels?.length ? pipeline.channelConfig.channels : campaign.channels) || [];
+    const attemptedTotal = sentTotal + failed.length + skipped.length;
 
     res.json({
       sent: sentByType,
-      sentTotal: sent.reduce((n, s) => n + s._count.id, 0),
+      sentTotal,
       failedTotal: failed.length,
       skippedTotal: skipped.length,
       failures: group(failed),
       skips: group(skipped),
+      // Live engine state
+      pendingTotal,
+      attemptedTotal,
+      totalLeads,
+      status: campaign.status,                       // active | paused | ...
+      withinSendWindow: isWithinSendWindow(new Date()),
+      waTemplateMissing: channels.includes('wa') && !campaign.config?.waTemplateName?.trim(),
+      lastError: pipeline?.lastError || null,
     });
   } catch (e) { next(e); }
 });
