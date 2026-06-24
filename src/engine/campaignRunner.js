@@ -1,7 +1,7 @@
 import { enqueue } from '../services/queue.js';
 import prisma from '../db.js';
 
-function isWithinSendWindow(now) {
+export function isWithinSendWindow(now) {
   // 9am–6pm Malaysia time (UTC+8)
   const klOffset = 8 * 60;
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
