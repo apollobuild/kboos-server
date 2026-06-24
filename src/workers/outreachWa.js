@@ -67,6 +67,9 @@ export async function handleOutreachWa(job) {
         templateName,
         // {{1}} = first name (the recommended single-variable cold template)
         parameters: [{ name: '1', value: firstName }],
+        // WATI silently drops a re-used broadcast_name (only the first send of a
+        // given name fires), so make it unique per send
+        broadcastName: `kboos_c${campaignId}_l${leadId}_${Date.now()}`,
       });
     }
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'sent', jobId: job.id } });
