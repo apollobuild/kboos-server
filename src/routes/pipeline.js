@@ -867,6 +867,50 @@ router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
     const channels = (pipeline?.channelConfig?.channels?.length ? pipeline.channelConfig.channels : campaign.channels) || [];
     const attemptedTotal = sentTotal + failed.length + skipped.length;
 
+    // When a live campaign is sitting at zero attempts, work out the *exact*
+    // blocker so the panel can say why instead of "check eligibility". This
+    // mirrors the engine's own send filter (campaignRunner.runTick) and is
+    // read-only — it never changes what the engine sends.
+    let idleReason = null;
+    let eligible = null;
+    if (attemptedTotal === 0 && pendingTotal === 0 && campaign.status === 'active' && totalLeads > 0) {
+      const [eligibleEmail, eligibleWa, eligibleVoice] = await Promise.all([
+        channels.includes('email') ? prisma.lead.count({ where: { campaignId, emailEligible: true } }) : Promise.resolve(null),
+        channels.includes('wa')    ? prisma.lead.count({ where: { campaignId, waEligible: true } })    : Promise.resolve(null),
+        channels.includes('voice') ? prisma.lead.count({ where: { campaignId, voiceEligible: true } }) : Promise.resolve(null),
+      ]);
+      eligible = { email: eligibleEmail, wa: eligibleWa, voice: eligibleVoice };
+
+      const seq = Array.isArray(campaign.sequence) ? campaign.sequence : [];
+      if (!seq.length) {
+        idleReason = 'This campaign has no outreach steps, so the engine has nothing to send. Re-save the Channel Strategy step to rebuild the sequence.';
+      } else {
+        const start = campaign.startedAt ? new Date(campaign.startedAt) : null;
+        const daysSinceStart = start ? Math.floor((Date.now() - start.getTime()) / 86400000) : 0;
+        const dueSteps = seq.filter(s => (s.day - 1) <= daysSinceStart);
+        if (!dueSteps.length) {
+          const nextDay = Math.min(...seq.map(s => s.day));
+          idleReason = `The first outreach step is scheduled for day ${nextDay} — nothing is due to send yet.`;
+        } else {
+          const dueChannels = [...new Set(dueSteps.map(s => (s.type === 'call' ? 'voice' : s.type)))];
+          const eligByChan = { email: eligibleEmail, wa: eligibleWa, voice: eligibleVoice };
+          const dueEligible = dueChannels.reduce((n, c) => n + (eligByChan[c] || 0), 0);
+          if (dueEligible === 0) {
+            const parts = dueChannels.map(c => {
+              const label = c === 'wa' ? 'WhatsApp' : c.charAt(0).toUpperCase() + c.slice(1);
+              const why = c === 'wa' ? ' — numbers must be a valid mobile (e.g. Malaysian 601…); landlines aren’t on WhatsApp'
+                : c === 'email' ? ' — a valid email address is required'
+                : '';
+              return `${label}: 0 of ${totalLeads} leads eligible${why}`;
+            });
+            idleReason = `No leads qualify for the active channel(s), so the engine skips everyone. ${parts.join('. ')}. Fix: add a channel these leads qualify for (Voice accepts any phone) in Channel Strategy, or import qualifying contacts — then Re-save Channels.`;
+          } else {
+            idleReason = `${dueEligible} lead(s) are eligible and due, but no sends were created. The background worker may be down — check the server /health endpoint (queue.workersRegistered should be true).`;
+          }
+        }
+      }
+    }
+
     res.json({
       sent: sentByType,
       sentTotal,
@@ -882,6 +926,9 @@ router.get('/:campaignId/send-issues', requireAuth, async (req, res, next) => {
       withinSendWindow: isWithinSendWindow(new Date()),
       waTemplateMissing: channels.includes('wa') && !campaign.config?.waTemplateName?.trim(),
       lastError: pipeline?.lastError || null,
+      channels,
+      eligible,        // per active channel, or null when not in the idle case
+      idleReason,      // exact reason the engine is producing zero sends
     });
   } catch (e) { next(e); }
 });
