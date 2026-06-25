@@ -48,3 +48,10 @@ export function isValidMobile(phone, mobilePrefix = '+60') {
   if (prefixDigits === '60') return /^601\d{8,9}$/.test(digits);
   return digits.length >= 8 && digits.length <= 15;
 }
+
+// Classify a phone for outreach planning: 'mobile' (WhatsApp-capable),
+// 'landline' (office number — Voice/Email only), or 'none' (no usable digits).
+export function classifyPhone(phone, mobilePrefix = '+60') {
+  if (!phone || !phone.replace(/\D/g, '')) return 'none';
+  return isValidMobile(phone, mobilePrefix) ? 'mobile' : 'landline';
+}

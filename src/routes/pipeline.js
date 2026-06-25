@@ -6,7 +6,7 @@ import { generateCampaignAssets, testConnection as testClaude } from '../service
 import { testConnection as testSendGrid } from '../services/sendgrid.js';
 import { testConnection as testWati } from '../services/wati.js';
 import { testConnection as testVapi } from '../services/vapi.js';
-import { isValidMobile } from '../services/tenantConfig.js';
+import { isValidMobile, classifyPhone } from '../services/tenantConfig.js';
 import { isWithinSendWindow } from '../engine/campaignRunner.js';
 import prisma from '../db.js';
 
@@ -50,6 +50,12 @@ router.get('/:campaignId', requireAuth, async (req, res, next) => {
     const personalizedLeads = await prisma.lead.count({ where: { campaignId, personalized: true, tenantId: tid } });
     const totalLeads = await prisma.lead.count({ where: { campaignId, tenantId: tid } });
 
+    // Breakdown of phone types so the Import step shows how WhatsApp-viable the
+    // list is (mobiles can use WhatsApp; landlines are Voice/Email only).
+    const leadPhones = await prisma.lead.findMany({ where: { campaignId, tenantId: tid }, select: { phone: true } });
+    const phoneTypes = { mobile: 0, landline: 0, none: 0 };
+    for (const l of leadPhones) phoneTypes[classifyPhone(l.phone)]++;
+
     res.json({
       campaign,
       pipeline: pipeline || { campaignId, stage: 'draft' },
@@ -57,6 +63,7 @@ router.get('/:campaignId', requireAuth, async (req, res, next) => {
       approvedAssets,
       personalizedLeads,
       totalLeads,
+      phoneTypes,
     });
   } catch (e) { next(e); }
 });
@@ -66,7 +73,7 @@ router.post('/:campaignId/scrape', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
     const tid = req.user.tenantId;
-    const { mode = 'gmaps', keyword, city, limit = 50, jobTitles = [], seniority = [] } = req.body;
+    const { mode = 'gmaps', keyword, city, limit = 50, jobTitles = [], seniority = [], mobileOnly = false } = req.body;
 
     if (!city) return res.status(400).json({ error: 'city is required' });
     if (mode !== 'apollo' && !keyword) return res.status(400).json({ error: 'keyword is required for Google Maps mode' });
@@ -80,7 +87,7 @@ router.post('/:campaignId/scrape', requireAuth, async (req, res, next) => {
       create: { campaignId, tenantId: tid, stage: 'scraping', scrapeTotal: limit, scrapeComplete: 0 },
     });
 
-    await enqueue('lead-scrape', { campaignId, mode, keyword, city, limit, jobTitles, seniority }, { priority: 1 });
+    await enqueue('lead-scrape', { campaignId, mode, keyword, city, limit, jobTitles, seniority, mobileOnly: !!mobileOnly }, { priority: 1 });
     res.json({ ok: true, stage: 'scraping' });
   } catch (e) { next(e); }
 });
@@ -90,7 +97,7 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.campaignId);
     const tid = req.user.tenantId;
-    const { csvText, fieldMap = {} } = req.body;
+    const { csvText, fieldMap = {}, mobileOnly = false } = req.body;
 
     if (!csvText) return res.status(400).json({ error: 'csvText is required' });
     if (csvText.length > 5_000_000) return res.status(400).json({ error: 'CSV too large (max 5 MB)' });
@@ -126,6 +133,7 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
     const existingEmails = new Set(existing.map(l => l.email).filter(Boolean));
 
     const toInsert = [];
+    let skippedLandline = 0;
     for (const row of rows) {
       const name = getField(row, 'name');
       const company = getField(row, 'company');
@@ -134,8 +142,12 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
       if (!name && !company) continue;
       if (phone && existingPhones.has(phone)) continue;
       if (email && existingEmails.has(email)) continue;
+      const phoneType = classifyPhone(phone);
+      // "Mobile only" — drop office landlines / numberless rows. Off by default.
+      if (mobileOnly && phoneType !== 'mobile') { skippedLandline++; continue; }
       const channels = [];
-      if (phone) channels.push('whatsapp');
+      // Only WhatsApp-capable mobiles get the WhatsApp channel
+      if (phoneType === 'mobile') channels.push('whatsapp');
       if (email) channels.push('email');
       toInsert.push({
         campaignId, bizId: campaign.bizId, tenantId: tid,
@@ -151,7 +163,7 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
       });
     }
 
-    if (!toInsert.length) return res.json({ count: 0, total: existing.length, msg: 'No new leads to import' });
+    if (!toInsert.length) return res.json({ count: 0, total: existing.length, skippedLandline, msg: mobileOnly && skippedLandline ? `No mobile leads — skipped ${skippedLandline} landline/office number(s)` : 'No new leads to import' });
 
     await prisma.lead.createMany({ data: toInsert });
     const newTotal = await prisma.lead.count({ where: { campaignId, tenantId: tid } });
@@ -164,10 +176,10 @@ router.post('/:campaignId/upload-csv', requireAuth, async (req, res, next) => {
     });
 
     await prisma.activity.create({
-      data: { color: 'blue', msg: `Imported ${toInsert.length} leads from CSV for ${campaign.name}`, tag: 'Import', tenantId: tid },
+      data: { color: 'blue', msg: `Imported ${toInsert.length} leads from CSV for ${campaign.name}` + (mobileOnly && skippedLandline ? ` · mobile-only: skipped ${skippedLandline} landline/office number(s)` : ''), tag: 'Import', tenantId: tid },
     }).catch(() => {});
 
-    res.json({ count: toInsert.length, total: newTotal });
+    res.json({ count: toInsert.length, total: newTotal, skippedLandline });
   } catch (e) { next(e); }
 });
 

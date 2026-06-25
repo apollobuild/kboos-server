@@ -1,5 +1,6 @@
 import { getApiKey } from './apiKeys.js';
 import { logScraper } from './costLogger.js';
+import { isValidMobile } from './tenantConfig.js';
 
 const BASE = 'https://api.app.outscraper.com';
 
@@ -48,7 +49,9 @@ export async function searchGoogleMaps({ query, limit = 50 }) {
 export function mapPlaceToLead({ place, campaignId, bizId }) {
   const phone = place.phone_number || place.phone || '';
   const channels = [];
-  if (phone) channels.push('whatsapp');
+  // Google Maps usually lists an office landline — only offer WhatsApp when the
+  // listed number is actually a mobile (601…), otherwise it can never send.
+  if (phone && isValidMobile(phone)) channels.push('whatsapp');
   channels.push('email');
 
   return {
