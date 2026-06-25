@@ -1,5 +1,6 @@
 import { searchGoogleMaps, mapPlaceToLead } from '../services/outscraper.js';
 import { getApiKey } from '../services/apiKeys.js';
+import { classifyPhone } from '../services/tenantConfig.js';
 import prisma from '../db.js';
 
 function norm(s) {
@@ -9,7 +10,7 @@ function norm(s) {
 }
 
 export async function handleScrape(job) {
-  const { campaignId, mode = 'gmaps', keyword, city, limit = 50, jobTitles = [], seniority = [] } = job.data;
+  const { campaignId, mode = 'gmaps', keyword, city, limit = 50, jobTitles = [], seniority = [], mobileOnly = false } = job.data;
 
   try {
     const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
@@ -89,10 +90,21 @@ export async function handleScrape(job) {
     const existingPhones = new Set(existing.map(l => l.phone).filter(Boolean));
     const existingEmails = new Set(existing.map(l => l.email).filter(Boolean));
 
-    const toInsert = allLeads.filter(l =>
+    const deduped = allLeads.filter(l =>
       (!l.phone || !existingPhones.has(l.phone)) &&
       (!l.email || !existingEmails.has(l.email))
     );
+
+    // "Mobile only" — keep just the WhatsApp-capable (601…) leads, drop office
+    // landlines. Off by default, so normal scrapes still keep everything.
+    let skippedLandline = 0;
+    const toInsert = mobileOnly
+      ? deduped.filter(l => {
+          const keep = classifyPhone(l.phone) === 'mobile';
+          if (!keep) skippedLandline++;
+          return keep;
+        })
+      : deduped;
 
     if (toInsert.length) {
       await prisma.lead.createMany({ data: toInsert });
@@ -109,7 +121,8 @@ export async function handleScrape(job) {
     await prisma.activity.create({
       data: {
         color: 'green',
-        msg: `Scraped ${toInsert.length} leads for "${campaign.name}" (${gmapsPlaces.length} Maps + ${apolloPeople.length} Apollo)`,
+        msg: `Scraped ${toInsert.length} leads for "${campaign.name}" (${gmapsPlaces.length} Maps + ${apolloPeople.length} Apollo)`
+          + (mobileOnly ? ` · mobile-only: skipped ${skippedLandline} landline/office number(s)` : ''),
         tag: 'Scraper',
       },
     }).catch(() => {});
