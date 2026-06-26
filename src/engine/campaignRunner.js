@@ -166,7 +166,16 @@ export async function runTick() {
         console.log(`[Engine] Campaign ${campaign.id} day ${step.day} ${step.type}: enqueued ${leads.length} (${assetType})`);
       }
     } catch (err) {
-      console.error(`[Engine] Error on campaign ${campaign.id}:`, err.message);
+      // Log the FULL error (stack/code), not just err.message — a Prisma error's
+      // message can be empty/multi-line and hid this failure for days. Also
+      // persist it so it's visible in the panel and /health/pipeline instead of
+      // failing silently every tick.
+      console.error(`[Engine] Error on campaign ${campaign.id}:`, err?.stack || err?.message || err);
+      const summary = (err?.message || err?.code || err?.name || 'see server logs').toString().replace(/\s+/g, ' ').trim().slice(0, 300);
+      await prisma.campaignPipeline.update({
+        where: { campaignId: campaign.id },
+        data: { lastError: `Engine error: ${summary}` },
+      }).catch(() => {});
     }
   }
 
