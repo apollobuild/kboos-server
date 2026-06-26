@@ -53,6 +53,8 @@ function watiError(data, status, context) {
     reason = `Lead has not opted in / not a valid WhatsApp contact. (${reason})`;
   } else if (status === 401 || status === 403) {
     reason = `WATI rejected the credentials — check the WATI token and API URL in Settings → API Keys. (${reason})`;
+  } else if (status === 405 || status === 404) {
+    reason = `WATI URL looks wrong — it must include your tenant ID, e.g. https://live-mt-server.wati.io/<tenantId> (copy it from WATI → API Docs). Set it in Settings → API Keys → WATI Server URL. (HTTP ${status})`;
   }
   return `WATI (${context}): ${reason}`;
 }
