@@ -1,4 +1,4 @@
-import { sendMessage, sendTemplate } from '../services/wati.js';
+import { sendMessage, sendTemplate } from '../services/whatsapp.js';
 import { injectPersonalization } from '../services/leadScoring.js';
 import { isValidMobile } from '../services/tenantConfig.js';
 import { recordSendFailure } from '../engine/circuitBreaker.js';
@@ -55,7 +55,7 @@ export async function handleOutreachWa(job) {
       const message = asset
         ? injectPersonalization(asset.editedBody || asset.body, lead, personalization)
         : `Hi ${firstName}, just following up — let me know if you'd like to hear more.`;
-      await sendMessage({ phone: lead.phone, message });
+      await sendMessage({ phone: lead.phone, message, provider: config.waProvider, waNumberId: config.waNumberId, tenantId: campaign.tenantId });
     } else {
       // Cold / outside window — an approved WATI template is required
       const templateName = config.waTemplateName;
@@ -70,6 +70,13 @@ export async function handleOutreachWa(job) {
         // WATI silently drops a re-used broadcast_name (only the first send of a
         // given name fires), so make it unique per send
         broadcastName: `kboos_c${campaignId}_l${leadId}_${Date.now()}`,
+        // Provider routing — undefined/'wati' keeps current behaviour; 'meta'
+        // sends via the official Meta Cloud API instead. languageCode only used
+        // by Meta (its templates are language-specific).
+        provider: config.waProvider,
+        languageCode: config.waTemplateLang,
+        waNumberId: config.waNumberId,
+        tenantId: campaign.tenantId,
       });
     }
     if (actionId) await prisma.campaignAction.update({ where: { id: actionId }, data: { status: 'sent', jobId: job.id } });
