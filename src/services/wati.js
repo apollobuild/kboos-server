@@ -51,6 +51,8 @@ function watiError(data, status, context) {
     reason = `Outside the 24-hour reply window — free-form messages can't be sent to this lead yet; an approved template is required. (${reason})`;
   } else if (/not.*opt|opt.?in|consent/i.test(reason)) {
     reason = `Lead has not opted in / not a valid WhatsApp contact. (${reason})`;
+  } else if (/not enough credit|insufficient|out of credit|no credit|low balance|wallet|recharge|top.?up/i.test(reason)) {
+    reason = `WATI account is out of credits — top up your WATI wallet (Billing/Wallet in the WATI dashboard) and confirm Meta WhatsApp billing is set up, then use "Retry failed" to resume. (${reason})`;
   } else if (status === 401 || status === 403) {
     reason = `WATI rejected the credentials — check the WATI token and API URL in Settings → API Keys. (${reason})`;
   } else if (status === 405 || status === 404) {
