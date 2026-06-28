@@ -21,7 +21,10 @@ router.get('/', requireAuth, async (req, res, next) => {
       const val = await getApiKey(api);
       keys[api] = val ? '••••••••' + val.slice(-4) : '';
     }
-    res.json({ ...s, apiKeys: keys });
+    // wa_provider is a routing flag, not a secret — return it in plaintext so the
+    // UI toggle can show the active sender. Defaults to 'wati' when unset.
+    const waProvider = (await getApiKey('wa_provider')) || 'wati';
+    res.json({ ...s, apiKeys: keys, waProvider });
   } catch (e) { next(e); }
 });
 
@@ -31,6 +34,7 @@ const VALID_API_KEYS = new Set([
   'billplz_x_signature_key', 'vapi', 'vapi_phone_number_id',
   'meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id',
   'google_maps', 'openai',
+  'wa_provider', // 'wati' | 'meta' — which WhatsApp sender campaigns use
 ]);
 
 router.post('/api-key', requireAuth, async (req, res, next) => {
